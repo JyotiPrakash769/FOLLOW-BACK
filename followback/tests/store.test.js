@@ -85,7 +85,9 @@ describe("event log", () => {
   it("records follower and following changes with dates", () => {
     S.add({ t: day, followers: list("a"), following: list("a", "b") });
     S.add({ t: 2 * day, followers: list("a", "c"), following: list("a") });
-    const kinds = S.events().map((e) => e.k + ":" + S.name(e.id)).sort();
+    const kinds = S.events()
+      .map((e) => e.k + ":" + S.name(e.id))
+      .sort();
     expect(kinds).toEqual(["gained:c", "unfollowed:b"]);
     expect(S.events()[0].t).toBe(2 * day);
   });
@@ -114,7 +116,11 @@ describe("storage size", () => {
     const names = Array.from({ length: 500 }, (_, i) => "user_number_" + i);
     const v1 = [];
     for (let d = 1; d <= 20; d++) {
-      S.add({ t: d * day, followers: names.map((u) => ({ u, t: 1700000000 })), following: list(...names.slice(0, 250)) });
+      S.add({
+        t: d * day,
+        followers: names.map((u) => ({ u, t: 1700000000 })),
+        following: list(...names.slice(0, 250))
+      });
       v1.push({ t: d * day, followers: names, following: names.slice(0, 250), dfo: {}, dfg: {} });
     }
     const v1bytes = JSON.stringify(v1).length;
@@ -123,13 +129,20 @@ describe("storage size", () => {
 
   it("charges much less than v1 did for each extra snapshot", () => {
     const names = Array.from({ length: 500 }, (_, i) => "user_number_" + i);
-    const fo = list(...names), fg = list(...names.slice(0, 250));
+    const fo = list(...names),
+      fg = list(...names.slice(0, 250));
     for (let d = 1; d <= 10; d++) S.add({ t: d * day, followers: fo, following: fg });
     const before = S.bytes();
     S.add({ t: 11 * day, followers: fo, following: fg });
     const v2marginal = S.bytes() - before;
     // v1 wrote every username out again on every upload.
-    const v1marginal = JSON.stringify({ t: 0, followers: names, following: names.slice(0, 250), dfo: {}, dfg: {} }).length;
+    const v1marginal = JSON.stringify({
+      t: 0,
+      followers: names,
+      following: names.slice(0, 250),
+      dfo: {},
+      dfg: {}
+    }).length;
     expect(v2marginal).toBeLessThan(v1marginal / 3);
   });
 
@@ -196,7 +209,10 @@ describe("backups", () => {
   });
 
   it("imports an old v1 backup", () => {
-    const v1 = { snaps: [{ t: day, followers: ["alice"], following: ["alice", "bob"], dfo: { alice: 7 }, dfg: {} }], meta: { ign: ["bob"], so: "new" } };
+    const v1 = {
+      snaps: [{ t: day, followers: ["alice"], following: ["alice", "bob"], dfo: { alice: 7 }, dfg: {} }],
+      meta: { ign: ["bob"], so: "new" }
+    };
     const r = S.importJson(JSON.stringify(v1));
     expect(r.ok).toBe(true);
     expect(S.lists().mutual.map(S.name)).toEqual(["alice"]);
@@ -215,10 +231,13 @@ describe("backups", () => {
 describe("migration from v1 localStorage", () => {
   it("converts saved v1 data on first load and writes the new key", () => {
     const s2 = fakeStorage();
-    s2.setItem(OLD_SNAPS, JSON.stringify([
-      { t: day, followers: ["alice", "bob"], following: ["alice"], dfo: { alice: 99 }, dfg: {} },
-      { t: 2 * day, followers: ["alice"], following: ["alice"], dfo: {}, dfg: {} }
-    ]));
+    s2.setItem(
+      OLD_SNAPS,
+      JSON.stringify([
+        { t: day, followers: ["alice", "bob"], following: ["alice"], dfo: { alice: 99 }, dfg: {} },
+        { t: 2 * day, followers: ["alice"], following: ["alice"], dfo: {}, dfg: {} }
+      ])
+    );
     s2.setItem(OLD_META, JSON.stringify({ ign: ["bob"], th: "dark", so: "old" }));
     const T = createStore(s2);
     expect(T.load().migrated).toBe(true);
@@ -242,5 +261,81 @@ describe("migration from v1 localStorage", () => {
     const T = createStore(s3);
     expect(() => T.load()).not.toThrow();
     expect(T.snaps()).toEqual([]);
+  });
+});
+
+describe("insights", () => {
+  it("computes growth, churn and retention across history", () => {
+    S.add({ t: day, followers: list("a", "b", "c"), following: list("a") });
+    S.add({ t: 31 * day, followers: list("a", "b", "d", "e"), following: list("a") }); // -c +d +e
+    const ins = S.insights();
+    expect(ins.intervals).toHaveLength(1);
+    expect(ins.intervals[0].gained).toBe(2);
+    expect(ins.intervals[0].lost).toBe(1);
+    expect(ins.growth.total).toBe(1);
+    expect(ins.churn.lost).toBe(1);
+    expect(ins.churn.gained).toBe(2);
+    const cohort = ins.cohorts.find((c) => c.gained === 2);
+    expect(cohort.stillHere).toBe(2); // d and e are still present in the latest snapshot
+    expect(cohort.retention).toBe(1);
+  });
+
+  it("measures how long boomerangs lasted", () => {
+    S.add({ t: day, followers: list("x"), following: list("x") });
+    S.add({ t: 11 * day, followers: list("x", "flake"), following: list("x") });
+    S.add({ t: 21 * day, followers: list("x"), following: list("x") });
+    expect(S.insights().medianDaysToUnfollow).toBe(10);
+  });
+
+  it("returns an empty shape before a second snapshot", () => {
+    S.add({ t: day, followers: list("a"), following: list("a") });
+    expect(S.insights().intervals).toEqual([]);
+    expect(S.insights().growth).toBe(null);
+  });
+});
+
+describe("account history", () => {
+  it("returns every recorded event for one account, newest first", () => {
+    S.add({ t: day, followers: list("on"), following: list("on") });
+    S.add({ t: 2 * day, followers: list(), following: list("on") }); // on unfollowed
+    S.add({ t: 3 * day, followers: list("on"), following: list("on") }); // on came back
+    const h = S.historyOf(S.id("on"));
+    expect(h.map((e) => e.k)).toEqual(["gained", "lost"]);
+    expect(h[0].t).toBe(3 * day);
+  });
+});
+
+describe("snooze versus always-skip", () => {
+  it("clears snoozes on the next upload but keeps always-skip", () => {
+    S.add({ t: day, followers: list("keep", "skipme", "snoozeme"), following: list("keep", "skipme", "snoozeme") });
+    // make skipme and snoozeme not-back by having us follow but them not follow back
+    S.add({ t: 2 * day, followers: list("keep"), following: list("keep", "skipme", "snoozeme") });
+    S.setFlag("ign", [S.id("skipme")], true);
+    S.setFlag("snooze", [S.id("snoozeme")], true);
+    expect(S.lists().notback.map(S.name)).toEqual([]);
+    S.add({ t: 3 * day, followers: list("keep"), following: list("keep", "skipme", "snoozeme") });
+    const nb = S.lists().notback.map(S.name);
+    expect(nb).toContain("snoozeme"); // snooze expired
+    expect(nb).not.toContain("skipme"); // always-skip persists
+  });
+
+  it("moving an account to one hide bucket removes it from the other", () => {
+    S.add({ t: day, followers: list("a"), following: list("a", "b") });
+    const b = S.id("b");
+    S.setFlag("snooze", [b], true);
+    expect(S.meta().snooze).toContain(b);
+    S.setFlag("ign", [b], true);
+    expect(S.meta().ign).toContain(b);
+    expect(S.meta().snooze).not.toContain(b);
+  });
+});
+
+describe("lists memoization", () => {
+  it("returns a cached object until the store changes", () => {
+    S.add({ t: day, followers: list("a"), following: list("a", "b") });
+    const first = S.lists();
+    expect(S.lists()).toBe(first); // same reference, served from cache
+    S.setFlag("done", [S.id("b")], true);
+    expect(S.lists()).not.toBe(first); // invalidated by the write
   });
 });

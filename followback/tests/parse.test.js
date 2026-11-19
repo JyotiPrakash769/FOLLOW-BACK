@@ -70,10 +70,12 @@ describe("extractJson", () => {
     expect(rows[0].t).toBe(1700000000);
   });
   it("deduplicates and keeps a timestamp found on a later duplicate", () => {
-    const rows = extractJson(JSON.stringify([
-      { string_list_data: [{ value: "dup" }] },
-      { string_list_data: [{ value: "DUP", timestamp: 123 }] }
-    ]));
+    const rows = extractJson(
+      JSON.stringify([
+        { string_list_data: [{ value: "dup" }] },
+        { string_list_data: [{ value: "DUP", timestamp: 123 }] }
+      ])
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0].t).toBe(123);
   });
@@ -91,8 +93,9 @@ describe("extractHtml", () => {
   it("ignores instagram.com mentioned in plain text rather than an anchor", () => {
     expect(names(rows)).not.toContain("ghost_account");
   });
-  it("reads the date next to each entry", () => {
-    expect(rows[0].t).toBe(Math.floor(Date.parse("Nov 12, 2024 10:23 am") / 1000));
+  it("reads the date next to each entry, at day resolution", () => {
+    expect(rows[0].t).toBe(Math.floor(new Date(2024, 10, 12).getTime() / 1000));
+    expect(rows[1].t).toBe(Math.floor(new Date(2024, 11, 1).getTime() / 1000));
   });
 });
 

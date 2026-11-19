@@ -1,4 +1,4 @@
-import { kind, extract } from "./parse.js";
+import { kind, extractDetailed } from "./parse.js";
 import { EXTRA_KINDS } from "./store.js";
 
 export const ALL_KINDS = ["followers", "following", "pending"].concat(EXTRA_KINDS);
@@ -30,26 +30,47 @@ export async function gather(files, Zip, onProgress) {
 
   const payload = {};
   const index = {};
-  for (const k of ALL_KINDS) { payload[k] = []; index[k] = new Map(); }
+  for (const k of ALL_KINDS) {
+    payload[k] = [];
+    index[k] = new Map();
+  }
   const used = [];
+
+  let htmlFiles = 0,
+    htmlWithDates = 0;
 
   for (let i = 0; i < jobs.length; i++) {
     const j = jobs[i];
     if (onProgress) onProgress({ done: i, total: jobs.length, name: j.name });
-    const rows = extract(await j.read());
+    const { rows, format } = extractDetailed(await j.read());
     if (!rows.length) continue;
+    if (format === "html") {
+      htmlFiles++;
+      if (rows.some((r) => r.t)) htmlWithDates++;
+    }
     used.push(j.name);
-    const seen = index[j.k], list = payload[j.k];
+    const seen = index[j.k],
+      list = payload[j.k];
     for (const r of rows) {
       const key = r.u.toLowerCase();
       const at = seen.get(key);
-      if (at === undefined) { seen.set(key, list.length); list.push(r); }
-      else if (r.t && (!list[at].t || r.t < list[at].t)) list[at].t = r.t;
+      if (at === undefined) {
+        seen.set(key, list.length);
+        list.push(r);
+      } else if (r.t && (!list[at].t || r.t < list[at].t)) list[at].t = r.t;
     }
   }
   if (onProgress) onProgress({ done: jobs.length, total: jobs.length, name: "" });
 
   const counts = {};
   for (const k of ALL_KINDS) counts[k] = payload[k].length;
-  return { payload, counts, files: used, considered: jobs.map((j) => j.name) };
+  return {
+    payload,
+    counts,
+    files: used,
+    considered: jobs.map((j) => j.name),
+    // An HTML export whose dates could not be read at all: usually a language
+    // whose month names are not recognised. JSON always carries real timestamps.
+    warnings: { htmlNoDates: htmlFiles > 0 && htmlWithDates === 0 }
+  };
 }

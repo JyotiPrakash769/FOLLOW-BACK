@@ -23,6 +23,7 @@
 <div class="row" style="margin-bottom:18px">
 <button class="btn" id="th" type="button">Light / Dark</button>
 <button class="btn" id="mgr" type="button">Snapshots</button>
+<button class="btn" id="ins" type="button">Insights</button>
 </div>
 
 <div class="box">
@@ -55,6 +56,11 @@
 <button class="btn" id="claimb" type="button">Check</button>
 </div>
 
+<div class="box" id="insbox" hidden>
+<h2>Insights</h2>
+<div id="insbody"></div>
+</div>
+
 <div class="tabs" id="tabs" role="tablist" aria-label="Lists"></div>
 <div class="tools" id="cmp" hidden><select id="ca" aria-label="From snapshot"></select><select id="cb" aria-label="To snapshot"></select></div>
 <div class="tools">
@@ -63,12 +69,20 @@
 <select id="so" aria-label="Sort"><option value="az">A-Z</option><option value="new">Newest</option><option value="old">Oldest</option></select>
 </div>
 <div class="tools" style="border-bottom:4px solid var(--ink);margin-bottom:0">
-<button class="btn" id="bhide" type="button" disabled>Hide</button>
+<button class="btn" id="bskip" type="button" disabled>Always skip</button>
+<button class="btn" id="bsnooze" type="button" disabled>Snooze</button>
 <button class="btn" id="bdone" type="button" disabled>Done</button>
 <button class="btn" id="cp" type="button">Copy</button>
 <button class="btn" id="dl" type="button">CSV</button>
 </div>
+<div class="tools" style="border-bottom:4px solid var(--ink)">
+<button class="btn" id="queue" type="button" aria-pressed="false">Queue mode</button>
+<button class="btn" id="open10" type="button" hidden>Open next 10</button>
+<span class="hint" id="qprog" style="margin:0;align-self:center;padding:0 10px"></span>
+</div>
+<div class="warn" id="pace" hidden></div>
 <ul class="list" id="list" role="tabpanel" tabindex="0" aria-label="Accounts"></ul>
+<p class="sr" id="live" role="status" aria-live="polite"></p>
 <div class="row" style="margin-bottom:22px"><button class="btn" id="more" type="button" hidden>Show more</button><span class="hint" id="shown" style="margin:0;align-self:center"></span></div>
 
 <div id="chartbox" hidden><h2>History</h2><div class="scroll"><svg id="chart" viewBox="0 0 640 260" role="img" aria-label="Followers and following over time"></svg></div><p class="hint" id="legend"></p></div>

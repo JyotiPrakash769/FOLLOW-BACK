@@ -19,18 +19,24 @@ async function zipOf(entries, name) {
 
 describe("gather", () => {
   it("reads loose JSON files", async () => {
-    const r = await gather([file("followers_1.json", fx("followers_1.json")), file("following.json", fx("following.json"))], null);
+    const r = await gather(
+      [file("followers_1.json", fx("followers_1.json")), file("following.json", fx("following.json"))],
+      null
+    );
     expect(names(r.payload.followers)).toEqual(["alice", "bob_the.builder", "carol"]);
     expect(names(r.payload.following)).toEqual(["alice", "erin"]);
     expect(r.counts.followers).toBe(3);
   });
 
   it("merges a split follower list and keeps the earliest timestamp", async () => {
-    const r = await gather([
-      file("followers_1.json", fx("followers_1.json")),
-      file("followers_2.json", fx("followers_2.json")),
-      file("following.json", fx("following.json"))
-    ], null);
+    const r = await gather(
+      [
+        file("followers_1.json", fx("followers_1.json")),
+        file("followers_2.json", fx("followers_2.json")),
+        file("following.json", fx("following.json"))
+      ],
+      null
+    );
     expect(names(r.payload.followers).sort()).toEqual(["alice", "bob_the.builder", "carol", "dave"]);
     const alice = r.payload.followers.find((x) => x.u === "alice");
     expect(alice.t).toBe(1690000000); // not the 1700000000 from followers_1
@@ -55,8 +61,11 @@ describe("gather", () => {
 
   it("reports progress for every recognised file", async () => {
     const seen = [];
-    await gather([file("followers_1.json", fx("followers_1.json")), file("following.json", fx("following.json"))],
-      null, (p) => seen.push(p.done + "/" + p.total));
+    await gather(
+      [file("followers_1.json", fx("followers_1.json")), file("following.json", fx("following.json"))],
+      null,
+      (p) => seen.push(p.done + "/" + p.total)
+    );
     expect(seen).toEqual(["0/2", "1/2", "2/2"]);
   });
 
@@ -71,7 +80,10 @@ describe("gather", () => {
   });
 
   it("handles an HTML export", async () => {
-    const r = await gather([file("followers.html", fx("followers.html")), file("following.json", fx("following.json"))], null);
+    const r = await gather(
+      [file("followers.html", fx("followers.html")), file("following.json", fx("following.json"))],
+      null
+    );
     expect(names(r.payload.followers)).toEqual(["jack", "kate_01"]);
   });
 });

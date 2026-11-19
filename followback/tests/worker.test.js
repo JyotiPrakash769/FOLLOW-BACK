@@ -14,7 +14,9 @@ const src = readFileSync(new URL("../worker.js", import.meta.url), "utf8");
 function spawn() {
   const sent = [];
   let resolveDone;
-  const finished = new Promise((r) => { resolveDone = r; });
+  const finished = new Promise((r) => {
+    resolveDone = r;
+  });
   const self = {
     // JSZip ships a setImmediate polyfill that probes the host for an old-IE
     // event API when it cannot find one; handing it Node's keeps it on the
@@ -29,10 +31,34 @@ function spawn() {
     }
   };
   const ctx = createContext({
-    self, globalThis: undefined, console,
-    setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, clearImmediate,
-    Promise, Uint8Array, ArrayBuffer, Buffer, TextDecoder, TextEncoder,
-    File, Blob, Date, Math, JSON, Error, Object, Array, String, Number, RegExp, Map, Set
+    self,
+    globalThis: undefined,
+    console,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    setImmediate,
+    clearImmediate,
+    Promise,
+    Uint8Array,
+    ArrayBuffer,
+    Buffer,
+    TextDecoder,
+    TextEncoder,
+    File,
+    Blob,
+    Date,
+    Math,
+    JSON,
+    Error,
+    Object,
+    Array,
+    String,
+    Number,
+    RegExp,
+    Map,
+    Set
   });
   ctx.window = undefined;
   runInContext(src, ctx, { filename: "worker.js" });

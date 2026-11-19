@@ -1,3 +1,4 @@
+// @ts-nocheck - gather() and self.JSZip are provided by the build concatenation.
 /**
  * Parsing worker. Built by build.js into a standalone classic worker so the
  * main thread never blocks on JSON.parse of a multi-megabyte export.

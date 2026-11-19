@@ -21,7 +21,9 @@ on faith:
 - `script-src` is pinned to the sha256 of the page's own script. Nothing else runs.
 - Open DevTools, go to the Network tab and reload. Nothing but the page.
 
-`npm run check` enforces all of that in CI, so a regression breaks the build.
+`tools/verify.js` enforces all of that - 27 invariants - and CI runs it alongside
+eslint, a typecheck, the unit suite and Playwright browser tests, so a regression
+breaks the build.
 
 ## Features
 
@@ -30,17 +32,17 @@ on faith:
 - Lists: Not back, You skip, Mutual, Unfollowed you, New followers, Boomerang,
   Pending out, Requests in, You unfollowed, Blocked, Restricted, Close friends
 - **Count check** that catches the wrong-date-range mistake before you trust the numbers
+- **Queue mode** - a keyboard-driven pass to work through a list: open, tick off, snooze, skip
+- **Insights**: growth, churn, median days-to-unfollow, and month-by-month retention
 - **Timeline** of every follow and unfollow, with dates, across all your snapshots
 - **Boomerang** list: accounts that followed you and then unfollowed
-- Saved snapshots with a history chart, plus comparison between any two
-- Sort by follow date, newest or oldest
-- Hide accounts you do not care about; tick people off as you unfollow them
-- Select all and hide or tick in bulk
-- Banner showing what changed since your last upload, with a reminder after 14 days
-- CSV download, and a backup file you can download and restore
-- Snapshot manager: label snapshots, delete a bad one
-- Light and dark themes
-- Installable, and works offline
+- Per-account history: expand any row to see its full follow/unfollow timeline
+- A to-scale history chart of followers, following and not-following-back
+- Snapshot comparison, labelling and deletion
+- Sort by follow date; snooze until next upload, or always-skip for good
+- Bulk actions, CSV and JSON downloads, backup and restore
+- Reads follow dates from exports in 30+ languages
+- Light and dark themes; installable and fully offline
 
 ## How to get your file
 
@@ -64,9 +66,9 @@ In this browser's localStorage, and nowhere else. Clearing site data erases it, 
 does not follow you to another browser or phone. Download the backup file if you want
 to keep it or move it.
 
-Usernames are stored once and snapshots reference them by id, so a year of weekly
-uploads fits comfortably. The page shows how much of the browser's roughly 5 MB limit
-you are using, and offers to drop the oldest snapshots if you ever fill it.
+History is stored in IndexedDB, gzipped, with localStorage as a fallback. Usernames
+are stored once and snapshots reference them by id, so a year of weekly uploads is a
+few hundred KB. The page shows how much space you are using.
 
 ## Usage and deploy
 
@@ -82,9 +84,16 @@ See [followback/README.md](followback/README.md).
 ```bash
 cd followback
 npm install
-npm test        # 74 tests
-npm run check   # build + test + privacy/CSP invariants
+npm test          # 120 unit + integration tests
+npm run check     # build + lint + typecheck + test + verify
+npm run test:e2e  # Playwright smoke tests in a real browser
 ```
+
+## A note on unfollowing
+
+Queue mode opens profiles so you can unfollow by hand. It never automates Instagram -
+that breaks their terms and risks your account. Instagram also rate-limits bulk
+unfollowing, so pace yourself at roughly 100 to 200 a day.
 
 ## Limitations
 

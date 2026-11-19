@@ -9,12 +9,26 @@
     "build": "node build.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run build && npm run test && node tools/verify.js",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit -p jsconfig.json",
+    "lint": "eslint src build.js tools tests",
+    "format": "prettier --write \"src/**/*.{js,css}\" \"tests/**/*.js\" \"e2e/**/*.js\" build.js tools/*.js",
+    "format:check": "prettier --check \"src/**/*.{js,css}\" \"tests/**/*.js\" \"e2e/**/*.js\" build.js tools/*.js",
+    "check": "npm run build && npm run lint && npm run typecheck && npm run test && node tools/verify.js",
     "serve": "node tools/serve.js"
   },
   "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^26.6.6",
+    "eslint": "^9.15.0",
+    "fake-indexeddb": "^6.2.8",
+    "fast-check": "^4.10.3",
+    "globals": "^17.14.0",
     "jsdom": "^31.0.1",
     "jszip": "3.10.1",
+    "prettier": "^3.10.1",
+    "typescript": "^7.0.2",
     "vitest": "^2.1.9"
   }
 }

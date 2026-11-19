@@ -1,17 +1,24 @@
 /**
  * Snapshot storage.
  *
- * Schema v2 interns every username once into `names` and stores snapshots as
- * arrays of integer ids. A v1 snapshot repeated the full username list on every
- * upload, which exhausted the ~5MB localStorage quota after a few months of
- * weekly uploads.
+ * Usernames are interned once into `names`; snapshots hold integer ids. v1
+ * repeated every username on every upload and exhausted the localStorage quota
+ * after a few months of weekly uploads.
+ *
+ * Persistence is injected (see db.js). An adapter may be synchronous (a plain
+ * Storage object, which is what the unit tests pass) or asynchronous
+ * (IndexedDB). load/save/clear pass the adapter's result straight through, so
+ * they return a promise only when the adapter does; callers can `await`
+ * unconditionally.
  */
 
-export const KEY = "fb_db_v2";
-export const OLD_SNAPS = "fb_snaps_v1";
-export const OLD_META = "fb_meta_v1";
+import { storageAdapter, LS_KEY, LS_OLD_SNAPS, LS_OLD_META } from "./db.js";
 
+export const KEY = LS_KEY;
+export const OLD_SNAPS = LS_OLD_SNAPS;
+export const OLD_META = LS_OLD_META;
 export const EXTRA_KINDS = ["unfollowed", "blocked", "restricted", "closefriends", "received", "recent"];
+const DAY = 86400000;
 
 function blank() {
   return {
@@ -20,15 +27,36 @@ function blank() {
     first: {},
     snaps: [],
     events: [],
-    meta: { ign: [], done: [], th: "", so: "az", tab: "notback", claimed: null }
+    meta: { ign: [], done: [], snooze: [], th: "", so: "az", tab: "notback", claimed: null }
   };
 }
 
-export function createStore(storage) {
-  const store = storage || (typeof localStorage !== "undefined" ? localStorage : null);
+/** Run `fn` on a value that may or may not be a promise, without forcing one. */
+function thru(value, fn) {
+  return value && typeof value.then === "function" ? value.then(fn) : fn(value);
+}
+
+export function createStore(io) {
+  let adapter;
+  if (!io)
+    adapter = {
+      kind: "memory",
+      readAll: () => ({ current: null, v1snaps: null, v1meta: null }),
+      write: () => ({ ok: true }),
+      clear: () => ({ ok: true })
+    };
+  else if (typeof io.getItem === "function") adapter = storageAdapter(io);
+  else adapter = io;
+
   let db = blank();
   let idx = new Map();
+  let version = 0; // bumped on every mutation, to invalidate caches
+  let cache = null;
 
+  const bump = () => {
+    version++;
+    cache = null;
+  };
   function reindex() {
     idx = new Map();
     db.names.forEach((n, i) => idx.set(n.toLowerCase(), i));
@@ -38,38 +66,54 @@ export function createStore(storage) {
   function id(u) {
     const k = String(u).toLowerCase();
     let i = idx.get(k);
-    if (i === undefined) { i = db.names.length; db.names.push(String(u)); idx.set(k, i); }
-    else if (db.names[i] !== u && u) db.names[i] = String(u); // keep newest capitalisation
+    if (i === undefined) {
+      i = db.names.length;
+      db.names.push(String(u));
+      idx.set(k, i);
+    } else if (u && db.names[i] !== u) db.names[i] = String(u);
     return i;
   }
   const name = (i) => db.names[i] || "";
   const has = (u) => idx.has(String(u).toLowerCase());
 
-  function read(key) {
-    try { return store ? store.getItem(key) : null; } catch (e) { return null; }
+  function adopt(raw) {
+    db = Object.assign(blank(), raw);
+    db.meta = Object.assign(blank().meta, raw.meta || {});
+    for (const k of ["ign", "done", "snooze"]) if (!Array.isArray(db.meta[k])) db.meta[k] = [];
+    reindex();
+    bump();
   }
 
   function load() {
-    let raw = null;
-    try { raw = JSON.parse(read(KEY) || "null"); } catch (e) { raw = null; }
-    if (raw && raw.v === 2) {
-      db = Object.assign(blank(), raw);
-      db.meta = Object.assign(blank().meta, raw.meta || {});
-      reindex();
-      return { migrated: false };
-    }
-    const migrated = migrate();
-    return { migrated };
+    return thru(adapter.readAll(), (got) => {
+      let raw = null;
+      try {
+        raw = JSON.parse((got && got.current) || "null");
+      } catch (e) {
+        raw = null;
+      }
+      if (raw && raw.v === 2) {
+        adopt(raw);
+        return { migrated: false, from: got && got.from };
+      }
+      return { migrated: migrate(parseJson(got && got.v1snaps), parseJson(got && got.v1meta)) };
+    });
   }
+  const parseJson = (t) => {
+    try {
+      return JSON.parse(t || "null");
+    } catch (e) {
+      return null;
+    }
+  };
 
-  /** Convert a v1 payload (or a v1 backup) in place. */
-  function migrate(v1snaps, v1meta) {
-    let old = v1snaps;
-    if (!old) { try { old = JSON.parse(read(OLD_SNAPS) || "null"); } catch (e) { old = null; } }
-    let meta = v1meta;
-    if (!meta) { try { meta = JSON.parse(read(OLD_META) || "null"); } catch (e) { meta = null; } }
+  /** Convert a v1 payload (from storage, or from an old backup file). */
+  function migrate(old, meta) {
     if (!Array.isArray(old) || !old.length) {
-      if (meta) db.meta = Object.assign(db.meta, pickMeta(meta));
+      if (meta) {
+        db.meta = Object.assign(db.meta, pickMeta(meta));
+        bump();
+      }
       return false;
     }
     db = blank();
@@ -77,12 +121,16 @@ export function createStore(storage) {
     for (const s of old) {
       if (!s || !Array.isArray(s.followers) || !Array.isArray(s.following)) continue;
       const stamps = Object.assign({}, s.dfo || {}, s.dfg || {});
-      add({
-        t: s.t,
-        followers: s.followers.map((u) => ({ u, t: stamps[String(u).toLowerCase()] || 0 })),
-        following: s.following.map((u) => ({ u, t: stamps[String(u).toLowerCase()] || 0 })),
-        pending: (s.pending || []).map((u) => ({ u, t: 0 }))
-      }, true);
+      const at = (u) => stamps[String(u).toLowerCase()] || 0;
+      add(
+        {
+          t: s.t,
+          followers: s.followers.map((u) => ({ u, t: at(u) })),
+          following: s.following.map((u) => ({ u, t: at(u) })),
+          pending: (s.pending || []).map((u) => ({ u, t: 0 }))
+        },
+        true
+      );
     }
     if (meta) {
       const m = pickMeta(meta);
@@ -90,6 +138,7 @@ export function createStore(storage) {
       m.done = (meta.done || []).filter(has).map(id);
       db.meta = Object.assign(db.meta, m);
     }
+    bump();
     save();
     return true;
   }
@@ -99,22 +148,15 @@ export function createStore(storage) {
     if (typeof m.th === "string") o.th = m.th;
     if (typeof m.so === "string") o.so = m.so;
     if (typeof m.claimed === "number") o.claimed = m.claimed;
+    if (typeof m.tab === "string") o.tab = m.tab;
     return o;
   }
 
-  function serialise() { return JSON.stringify(db); }
+  const serialise = () => JSON.stringify(db);
 
-  /**
-   * Persist. Returns {ok} or {ok:false, quota:true} so the caller can offer to
-   * prune instead of silently losing the snapshot.
-   */
+  /** Persist. `{ok:false, quota:true}` means the caller should offer to prune. */
   function save() {
-    if (!store) return { ok: false };
-    try { store.setItem(KEY, serialise()); return { ok: true }; }
-    catch (e) {
-      const quota = e && (e.name === "QuotaExceededError" || e.code === 22 || /quota/i.test(e.message || ""));
-      return { ok: false, quota: !!quota, error: e };
-    }
+    return thru(adapter.write(serialise()), (r) => r || { ok: true });
   }
 
   const snaps = () => db.snaps;
@@ -122,12 +164,18 @@ export function createStore(storage) {
   const meta = () => db.meta;
   const events = () => db.events;
   const firstSeen = (i) => db.first[i] || 0;
-
-  /** ids present in a snapshot list, as a Set for O(1) membership. */
   const setOf = (snap, key) => new Set(snap && snap[key] ? snap[key] : []);
 
+  /** Followers minus mutuals: the headline number, per snapshot, for the chart. */
+  function notBackCount(snap) {
+    const fo = setOf(snap, "fo");
+    let n = 0;
+    for (const i of snap.fg || []) if (!fo.has(i)) n++;
+    return n;
+  }
+
   /**
-   * Add a snapshot. `payload.followers/following/pending` are [{u,t}] arrays.
+   * Add a snapshot. `payload.followers/following/...` are [{u,t}] arrays.
    * Two uploads on the same calendar day replace each other.
    */
   function add(payload, quiet) {
@@ -143,7 +191,10 @@ export function createStore(storage) {
     };
     const snap = { t, fo: conv(payload.followers), fg: conv(payload.following), pe: conv(payload.pending) };
     for (const k of EXTRA_KINDS) {
-      if (payload[k] && payload[k].length) { snap.x = snap.x || {}; snap.x[k] = conv(payload[k]); }
+      if (payload[k] && payload[k].length) {
+        snap.x = snap.x || {};
+        snap.x[k] = conv(payload[k]);
+      }
     }
 
     const prev = latest();
@@ -156,26 +207,33 @@ export function createStore(storage) {
     }
     const base = sameDay ? db.snaps[db.snaps.length - 2] : prev;
     if (base) logEvents(base, snap, db.snaps.length - 1);
-    if (!quiet) return save();
-    return { ok: true };
+    db.meta.snooze = []; // a snooze lasts until the next upload
+    bump();
+    return quiet ? { ok: true } : save();
   }
 
-  /** Record who joined and left between two snapshots. */
   function logEvents(a, b, si) {
-    const pairs = [["fo", "gained", "lost"], ["fg", "followed", "unfollowed"]];
-    for (const [key, up, down] of pairs) {
-      const A = setOf(a, key), B = setOf(b, key);
+    for (const [key, up, down] of [
+      ["fo", "gained", "lost"],
+      ["fg", "followed", "unfollowed"]
+    ]) {
+      const A = setOf(a, key),
+        B = setOf(b, key);
       for (const i of B) if (!A.has(i)) db.events.push({ t: b.t, k: up, id: i, s: si });
       for (const i of A) if (!B.has(i)) db.events.push({ t: b.t, k: down, id: i, s: si });
     }
     db.events.sort((x, y) => y.t - x.t);
   }
 
-  /** Accounts that followed, then unfollowed - the follow-for-follow pattern. */
+  /** Every recorded event for one account, newest first. */
+  const historyOf = (i) => db.events.filter((e) => e.id === i);
+
+  /** Accounts that followed, then unfollowed: the follow-for-follow pattern. */
   function boomerangs() {
     const pending = new Map();
     const out = [];
-    for (const e of db.events.slice().reverse()) { // oldest first
+    for (const e of db.events.slice().reverse()) {
+      // oldest first
       if (e.k === "gained") pending.set(e.id, e.t);
       else if (e.k === "lost" && pending.has(e.id)) {
         out.push({ id: e.id, from: pending.get(e.id), to: e.t });
@@ -185,39 +243,161 @@ export function createStore(storage) {
     return out.sort((a, b) => b.to - a.to);
   }
 
+  /**
+   * Two hide buckets doing two different jobs: `ign` is "always skip this
+   * account" (a celebrity you follow on purpose), `snooze` is "not this time"
+   * and is cleared by the next upload.
+   */
+  const isHidden = (i) => db.meta.ign.includes(i) || db.meta.snooze.includes(i);
+
   /** Derived lists for the latest snapshot, comparing snapshots `ai` and `bi`. */
   function lists(ai, bi) {
+    const key = version + ":" + (ai == null ? -1 : ai) + ":" + (bi == null ? -1 : bi);
+    if (cache && cache.key === key) return cache.value;
+
     const s = latest();
-    const L = { notback: [], fans: [], mutual: [], lost: [], gained: [], pending: [], ign: [], boomerang: [] };
+    const L = { notback: [], fans: [], mutual: [], lost: [], gained: [], boomerang: [], snooze: [], ign: [] };
     for (const k of EXTRA_KINDS) L[k] = [];
-    if (!s) return L;
-    const ign = new Set(db.meta.ign);
-    const fo = setOf(s, "fo"), fg = setOf(s, "fg");
-    for (const i of fg) { if (fo.has(i)) L.mutual.push(i); else (ign.has(i) ? L.ign : L.notback).push(i); }
-    for (const i of fo) if (!fg.has(i)) (ign.has(i) ? L.ign : L.fans).push(i);
-    L.pending = (s.pe || []).filter((i) => !ign.has(i));
-    for (const k of EXTRA_KINDS) L[k] = ((s.x && s.x[k]) || []).filter((i) => !ign.has(i));
+    if (!s) {
+      cache = { key, value: L };
+      return L;
+    }
+
+    const fo = setOf(s, "fo"),
+      fg = setOf(s, "fg");
+    for (const i of fg) {
+      if (fo.has(i)) L.mutual.push(i);
+      else if (!isHidden(i)) L.notback.push(i);
+    }
+    for (const i of fo) if (!fg.has(i) && !isHidden(i)) L.fans.push(i);
+    L.pending = (s.pe || []).filter((i) => !isHidden(i));
+    for (const k of EXTRA_KINDS) L[k] = ((s.x && s.x[k]) || []).filter((i) => !isHidden(i));
+    L.snooze = db.meta.snooze.slice();
+    L.ign = db.meta.ign.slice();
+
     if (db.snaps.length > 1) {
       const A = db.snaps[ai != null && ai >= 0 ? ai : db.snaps.length - 2];
       const B = db.snaps[bi != null && bi >= 0 ? bi : db.snaps.length - 1];
-      const pa = setOf(A, "fo"), pb = setOf(B, "fo");
+      const pa = setOf(A, "fo"),
+        pb = setOf(B, "fo");
       for (const i of pa) if (!pb.has(i)) L.lost.push(i);
       for (const i of pb) if (!pa.has(i)) L.gained.push(i);
     }
-    L.boomerang = boomerangs().map((b) => b.id).filter((i) => !ign.has(i));
+    L.boomerang = boomerangs()
+      .map((b) => b.id)
+      .filter((i) => !isHidden(i));
+
+    cache = { key, value: L };
     return L;
+  }
+
+  /**
+   * Analysis over the whole snapshot history: growth and churn per interval,
+   * how long boomerangs last, and how well each month's intake stuck around.
+   */
+  function insights() {
+    const sn = db.snaps;
+    const out = {
+      intervals: [],
+      growth: null,
+      churn: null,
+      medianDaysToUnfollow: null,
+      cohorts: [],
+      best: null,
+      worst: null,
+      followerDays: 0
+    };
+    if (sn.length < 2) return out;
+
+    for (let i = 1; i < sn.length; i++) {
+      const A = setOf(sn[i - 1], "fo"),
+        B = setOf(sn[i], "fo");
+      let gained = 0,
+        lost = 0;
+      for (const x of B) if (!A.has(x)) gained++;
+      for (const x of A) if (!B.has(x)) lost++;
+      const days = Math.max(1, Math.round((sn[i].t - sn[i - 1].t) / DAY));
+      out.intervals.push({
+        from: sn[i - 1].t,
+        to: sn[i].t,
+        days,
+        gained,
+        lost,
+        net: gained - lost,
+        followers: sn[i].fo.length
+      });
+    }
+
+    const first = sn[0],
+      last = sn[sn.length - 1];
+    const span = Math.max(1, (last.t - first.t) / DAY);
+    out.followerDays = Math.round(span);
+    out.growth = {
+      total: last.fo.length - first.fo.length,
+      perDay: (last.fo.length - first.fo.length) / span,
+      perMonth: ((last.fo.length - first.fo.length) / span) * 30
+    };
+
+    const lostTotal = out.intervals.reduce((a, b) => a + b.lost, 0);
+    const gainedTotal = out.intervals.reduce((a, b) => a + b.gained, 0);
+    out.churn = {
+      lost: lostTotal,
+      gained: gainedTotal,
+      ratePerMonth: (lostTotal / span) * 30,
+      share: first.fo.length ? lostTotal / first.fo.length : 0
+    };
+
+    const spans = boomerangs()
+      .map((b) => (b.to - b.from) / DAY)
+      .sort((a, b) => a - b);
+    if (spans.length) {
+      const mid = Math.floor(spans.length / 2);
+      out.medianDaysToUnfollow = Math.round(spans.length % 2 ? spans[mid] : (spans[mid - 1] + spans[mid]) / 2);
+    }
+
+    // Of the followers gained in a given month, how many are still here?
+    const still = setOf(last, "fo");
+    const byMonth = new Map();
+    for (const e of db.events) {
+      if (e.k !== "gained") continue;
+      const d = new Date(e.t);
+      const k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      if (!byMonth.has(k)) byMonth.set(k, { month: k, gained: 0, stillHere: 0 });
+      const c = byMonth.get(k);
+      c.gained++;
+      if (still.has(e.id)) c.stillHere++;
+    }
+    out.cohorts = Array.from(byMonth.values())
+      .map((c) => Object.assign(c, { retention: c.gained ? c.stillHere / c.gained : 0 }))
+      .sort((a, b) => (a.month < b.month ? -1 : 1));
+
+    const ranked = out.intervals.slice().sort((a, b) => b.net - a.net);
+    out.best = ranked[0] || null;
+    out.worst = ranked[ranked.length - 1] || null;
+    return out;
   }
 
   function toggle(listName, i) {
     const arr = db.meta[listName];
     const at = arr.indexOf(i);
-    if (at > -1) arr.splice(at, 1); else arr.push(i);
+    if (at > -1) arr.splice(at, 1);
+    else arr.push(i);
+    bump();
     return save();
   }
+  /** Set or clear a flag for several accounts at once. */
   function setFlag(listName, ids, on) {
     const arr = new Set(db.meta[listName]);
     for (const i of ids) on ? arr.add(i) : arr.delete(i);
     db.meta[listName] = Array.from(arr);
+    // The hide buckets are mutually exclusive.
+    if (on) {
+      for (const other of ["ign", "snooze"]) {
+        if (other === listName) continue;
+        db.meta[other] = db.meta[other].filter((x) => !ids.includes(x));
+      }
+    }
+    bump();
     return save();
   }
 
@@ -226,14 +406,17 @@ export function createStore(storage) {
     db.snaps.splice(i, 1);
     db.events = db.events.filter((e) => e.s !== i).map((e) => (e.s > i ? Object.assign({}, e, { s: e.s - 1 }) : e));
     compact();
+    bump();
     return save();
   }
   function label(i, text) {
     if (!db.snaps[i]) return { ok: false };
-    if (text) db.snaps[i].label = String(text).slice(0, 40); else delete db.snaps[i].label;
+    if (text) db.snaps[i].label = String(text).slice(0, 40);
+    else delete db.snaps[i].label;
+    bump();
     return save();
   }
-  /** Drop the oldest snapshots - the recovery path when the quota is full. */
+  /** Drop the oldest snapshots. Only needed on the localStorage fallback. */
   function pruneOldest(n) {
     const keep = Math.max(1, db.snaps.length - n);
     const dropped = db.snaps.length - keep;
@@ -241,11 +424,11 @@ export function createStore(storage) {
     db.snaps = db.snaps.slice(-keep);
     db.events = db.events.filter((e) => e.s >= dropped).map((e) => Object.assign({}, e, { s: e.s - dropped }));
     compact();
-    const r = save();
-    return Object.assign({ dropped }, r);
+    bump();
+    return thru(save(), (r) => Object.assign({ dropped }, r));
   }
 
-  /** Drop names no snapshot, event or flag refers to, and renumber. */
+  /** Drop names nothing refers to any more, and renumber. */
   function compact() {
     const live = new Set();
     for (const s of db.snaps) {
@@ -253,59 +436,98 @@ export function createStore(storage) {
       if (s.x) for (const k of Object.keys(s.x)) for (const i of s.x[k]) live.add(i);
     }
     for (const e of db.events) live.add(e.id);
-    for (const k of ["ign", "done"]) for (const i of db.meta[k]) live.add(i);
+    for (const k of ["ign", "done", "snooze"]) for (const i of db.meta[k]) live.add(i);
     if (live.size === db.names.length) return;
     const map = new Map();
-    const names = [], first = {};
+    const names = [],
+      first = {};
     db.names.forEach((n, i) => {
       if (!live.has(i)) return;
       const ni = names.length;
-      map.set(i, ni); names.push(n);
+      map.set(i, ni);
+      names.push(n);
       if (db.first[i]) first[ni] = db.first[i];
     });
     const mv = (arr) => arr.map((i) => map.get(i)).filter((i) => i !== undefined);
-    db.names = names; db.first = first;
+    db.names = names;
+    db.first = first;
     for (const s of db.snaps) {
       for (const k of ["fo", "fg", "pe"]) if (s[k]) s[k] = mv(s[k]);
       if (s.x) for (const k of Object.keys(s.x)) s.x[k] = mv(s.x[k]);
     }
     db.events = db.events.filter((e) => map.has(e.id)).map((e) => Object.assign({}, e, { id: map.get(e.id) }));
-    for (const k of ["ign", "done"]) db.meta[k] = mv(db.meta[k]);
+    for (const k of ["ign", "done", "snooze"]) db.meta[k] = mv(db.meta[k]);
     reindex();
+    bump();
   }
 
-  function exportJson() { return JSON.stringify(db); }
+  const exportJson = () => JSON.stringify(db);
 
   /** Accept a v2 export or a v1 backup. */
   function importJson(text) {
     let j;
-    try { j = JSON.parse(text); } catch (e) { return { ok: false, reason: "not JSON" }; }
+    try {
+      j = JSON.parse(text);
+    } catch (e) {
+      return { ok: false, reason: "not JSON" };
+    }
     if (Array.isArray(j) || (j && Array.isArray(j.snaps) && !j.v)) {
       const arr = Array.isArray(j) ? j : j.snaps;
       if (!arr.every((s) => s && s.followers && s.following && s.t)) return { ok: false, reason: "bad v1 backup" };
       migrate(arr, j.meta || null);
-      return Object.assign({ ok: true, count: db.snaps.length }, save());
+      return thru(save(), (r) => Object.assign({ ok: true, count: db.snaps.length }, r));
     }
-    if (!j || j.v !== 2 || !Array.isArray(j.snaps) || !Array.isArray(j.names)) return { ok: false, reason: "unrecognised backup" };
-    db = Object.assign(blank(), j);
-    db.meta = Object.assign(blank().meta, j.meta || {});
-    reindex();
-    return Object.assign({ ok: true, count: db.snaps.length }, save());
+    if (!j || j.v !== 2 || !Array.isArray(j.snaps) || !Array.isArray(j.names))
+      return { ok: false, reason: "unrecognised backup" };
+    adopt(j);
+    return thru(save(), (r) => Object.assign({ ok: true, count: db.snaps.length }, r));
   }
 
   function clear() {
-    db = blank(); idx = new Map();
-    try { if (store) { store.removeItem(KEY); store.removeItem(OLD_SNAPS); } } catch (e) {}
-    return { ok: true };
+    db = blank();
+    idx = new Map();
+    bump();
+    return thru(adapter.clear(), () => ({ ok: true }));
   }
 
-  /** Rough bytes used, for the storage meter. */
   const bytes = () => serialise().length;
 
   return {
-    load, save, add, lists, snaps, latest, meta, events, boomerangs,
-    id, name, has, firstSeen, toggle, setFlag, deleteSnapshot, label,
-    pruneOldest, compact, exportJson, importJson, clear, bytes,
-    get raw() { return db; }
+    load,
+    save,
+    add,
+    lists,
+    insights,
+    snaps,
+    latest,
+    meta,
+    events,
+    boomerangs,
+    historyOf,
+    id,
+    name,
+    has,
+    firstSeen,
+    notBackCount,
+    isHidden,
+    toggle,
+    setFlag,
+    deleteSnapshot,
+    label,
+    pruneOldest,
+    compact,
+    exportJson,
+    importJson,
+    clear,
+    bytes,
+    get adapterKind() {
+      return adapter.kind;
+    },
+    get version() {
+      return version;
+    },
+    get raw() {
+      return db;
+    }
   };
 }

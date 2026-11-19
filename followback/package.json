@@ -1,0 +1,20 @@
+{
+  "name": "followback",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Brutalist Instagram follow-back checker. Runs entirely in the browser, makes zero network requests.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run build && npm run test && node tools/verify.js",
+    "serve": "node tools/serve.js"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.1",
+    "jszip": "3.10.1",
+    "vitest": "^2.1.9"
+  }
+}

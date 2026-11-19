@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--CSP-->
+<title>FOLLOW/BACK - Instagram follow-back checker</title>
+<meta name="description" content="See who does not follow you back on Instagram. Reads your own data export in the browser. No login, no upload, no network requests at all.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ff3b00">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<meta property="og:title" content="FOLLOW/BACK">
+<meta property="og:description" content="Instagram follow-back checker that runs entirely in your browser. Zero network requests.">
+<meta property="og:type" content="website">
+<style><!--STYLE--></style>
+</head>
+<body>
+<main>
+<h1>Follow/<br>Back</h1>
+<p class="sub">Instagram follow-back checker. Runs in your browser. Nothing is uploaded.</p>
+<p class="priv">No analytics, no CDN, no network requests. Open DevTools, Network tab, and reload: the page talks to nobody. JSZip is bundled, not fetched.</p>
+<div class="row" style="margin-bottom:18px">
+<button class="btn" id="th" type="button">Light / Dark</button>
+<button class="btn" id="mgr" type="button">Snapshots</button>
+</div>
+
+<div class="box">
+<label id="drop"><input type="file" id="f" multiple accept=".zip,.json,.html,.htm">Drop Instagram ZIP here<small>or tap to pick it. Loose followers_1.json + following.json also work.</small></label>
+<div id="prog" aria-hidden="true"><i></i></div>
+<p id="msg" role="status" aria-live="polite"></p>
+</div>
+
+<div class="box" id="how">
+<h2>How to get your file</h2>
+<ol>
+<li>Open Instagram, go to Settings, then Accounts Center.</li>
+<li>Tap Your information and permissions, then Download your information.</li>
+<li>Choose Followers and following only. Set format to JSON and date range to All time.</li>
+<li>Request the download. Instagram emails you when it is ready, from a few minutes to a few hours.</li>
+<li>Download the ZIP and drop it in the box above. Do not unzip it.</li>
+</ol>
+<p class="hint">Repeat every week or two with a fresh ZIP. Each upload adds a snapshot, which unlocks the Unfollowed you tab, the timeline and the history chart.</p>
+</div>
+
+<section id="out" hidden>
+<div class="box" id="delta" style="padding:10px;box-shadow:4px 4px 0 var(--ink);font-weight:900"></div>
+<div class="warn" id="mismatch" hidden></div>
+<p class="big" id="big">0</p>
+<p id="bigl">Do not follow you back</p>
+<div class="stats"><div><b id="sa">0</b>Followers</div><div><b id="sb">0</b>Following</div><div><b id="sc">0</b>Mutual</div></div>
+
+<div class="tools" style="margin-bottom:16px">
+<input type="number" id="claim" min="0" step="1" placeholder="FOLLOWERS SHOWN ON YOUR PROFILE" aria-label="Follower count shown on your Instagram profile">
+<button class="btn" id="claimb" type="button">Check</button>
+</div>
+
+<div class="tabs" id="tabs" role="tablist" aria-label="Lists"></div>
+<div class="tools" id="cmp" hidden><select id="ca" aria-label="From snapshot"></select><select id="cb" aria-label="To snapshot"></select></div>
+<div class="tools">
+<label class="all" id="alll"><input type="checkbox" id="all" aria-label="Select all shown">All</label>
+<input type="search" id="q" placeholder="SEARCH USERNAME" aria-label="Search username">
+<select id="so" aria-label="Sort"><option value="az">A-Z</option><option value="new">Newest</option><option value="old">Oldest</option></select>
+</div>
+<div class="tools" style="border-bottom:4px solid var(--ink);margin-bottom:0">
+<button class="btn" id="bhide" type="button" disabled>Hide</button>
+<button class="btn" id="bdone" type="button" disabled>Done</button>
+<button class="btn" id="cp" type="button">Copy</button>
+<button class="btn" id="dl" type="button">CSV</button>
+</div>
+<ul class="list" id="list" role="tabpanel" tabindex="0" aria-label="Accounts"></ul>
+<div class="row" style="margin-bottom:22px"><button class="btn" id="more" type="button" hidden>Show more</button><span class="hint" id="shown" style="margin:0;align-self:center"></span></div>
+
+<div id="chartbox" hidden><h2>History</h2><div class="scroll"><svg id="chart" viewBox="0 0 640 260" role="img" aria-label="Followers and following over time"></svg></div><p class="hint" id="legend"></p></div>
+
+<div class="box" id="mgrbox" hidden>
+<h2>Snapshots</h2>
+<p class="hint" style="margin-top:0">Label a snapshot so you remember what it was, or delete one that was uploaded with the wrong date range.</p>
+<ul id="snaps"></ul>
+</div>
+
+<div class="box" style="margin-top:26px">
+<h2>Backup</h2>
+<p class="hint" style="margin-top:0">History lives in this browser only. Download the backup file and keep it somewhere safe.</p>
+<div class="row">
+<button class="btn" id="bkdl" type="button">Download backup</button>
+<label class="btn" for="bkf" style="display:inline-block">Restore from file<input type="file" id="bkf" accept=".json,.txt" style="position:absolute;opacity:0;width:1px;height:1px"></label>
+<button class="btn" id="clr" type="button" style="background:var(--hot)">Erase history</button>
+</div>
+<details style="margin-top:12px">
+<summary class="hint" style="cursor:pointer;font-weight:700">Paste a backup instead</summary>
+<textarea id="bk" aria-label="Backup text" spellcheck="false"></textarea>
+<button class="btn" id="rs" type="button">Restore from text</button>
+</details>
+<p class="hint" id="usage"></p>
+<div class="meter" aria-hidden="true"><i id="umeter"></i></div>
+</div>
+</section>
+</main>
+<script><!--SCRIPT--></script>
+</body>
+</html>

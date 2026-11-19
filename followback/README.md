@@ -1,62 +1,34 @@
-# FOLLOW/BACK
+# followback/ - the app
 
-A brutalist, single-page Instagram follow-back checker. Drop in your Instagram data export and see who doesn't follow you back, who you don't follow back, and what changed since your last upload.
+The app itself is `index.html`, with `worker.js` beside it. Both are **generated**
+from `src/` by `build.js` and committed, so GitHub Pages serves them with no build
+and `index.html` opens straight from the filesystem.
 
-Everything runs in your browser. Your files are never uploaded anywhere, and no Instagram login is needed.
+Edit `src/`, never `index.html`.
 
-## Features
+```
+src/parse.js            username + timestamp extraction (pure, heavily tested)
+src/store.js            snapshot schema v2, event log, quota handling
+src/gather.js           turns dropped files or a ZIP into a snapshot payload
+src/ui.js               DOM, rendering, interaction
+src/worker.js           worker glue around gather()
+src/index.template.html markup, with CSP/style/script placeholders
+src/style.css           styles
+vendor/jszip.min.js     bundled, never fetched
+build.js                strips module syntax, concatenates, inlines, hashes for CSP
+tools/verify.js         asserts the privacy and CSP invariants hold
+tools/serve.js          dependency-free static server for local testing
+```
 
-- Upload the Instagram ZIP as it downloads, or the loose JSON/HTML files
-- One big answer first: how many people don't follow you back
-- Lists: Not back, You skip, Mutual, Unfollowed you, New followers, Pending requests
-- Saved snapshots in your browser, with a history chart
-- Compare any two snapshots
-- Sort by follow date (newest or oldest)
-- Hide accounts you don't care about, and tick people off as you unfollow them
-- Banner showing changes since your last upload, with a refresh reminder after 14 days
-- Copy any list as CSV
-- Backup and restore your history as text
-- Light and dark themes
+```bash
+npm install
+npm test          # 74 tests: parser, storage, gather, generated worker, jsdom UI
+npm run build     # regenerate index.html + worker.js
+npm run check     # build + test + verify, the same gate CI runs
+npm run serve     # http://localhost:8080
+```
 
-## How to get your Instagram file
-
-1. Instagram: Settings, then Accounts Center
-2. Your information and permissions, then Download your information
-3. Choose **Followers and following** only, format **JSON**, date range **All time**
-4. Request the download, wait for the email, and download the ZIP
-5. Drop the ZIP onto the page (no need to unzip)
-
-If the follower count shown after upload doesn't match your profile, re-check that the date range was set to All time.
-
-## Usage
-
-Open `index.html` in a browser, or host it as a static site (see below). It has no build step and no backend.
-
-## Deploy with GitHub Pages
-
-1. Push this repo to GitHub
-2. Settings, then Pages
-3. Source: deploy from branch `main`, folder `/ (root)`
-4. Your site appears at `https://<username>.github.io/<repo>/`
-
-## Privacy
-
-- Files are read and compared locally in your browser
-- History is stored in your browser's localStorage, per site address
-- Moving to a new address? Use **Make backup** on the old one and **Restore** on the new one
-- Never commit your Instagram export to this repository (the `.gitignore` blocks the usual file names)
-
-## Limitations
-
-- Works only with Instagram's official data export, not usernames or logins
-- Threads files inside the ZIP are ignored on purpose
-- Counts depend on what Instagram puts in the export, so they can differ slightly from your live profile
-- Loads JSZip from cdnjs, so it needs an internet connection
-
-## Not affiliated with Instagram
-
-This is an independent personal project and is not affiliated with or endorsed by Instagram or Meta.
-
-## License
-
-MIT, see [LICENSE](LICENSE).
+`npm run build` recomputes the sha256 of the inlined script and writes it into the
+page's `script-src`, so a stale build is a hard CSP failure rather than a silent
+one. CI fails if the committed `index.html` or `worker.js` differs from a fresh
+build.

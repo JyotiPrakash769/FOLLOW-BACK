@@ -1,82 +1,109 @@
 # FOLLOW/BACK
 
-A brutalist, single-page Instagram follow-back checker. Drop in your Instagram data export and see who doesn't follow you back, who you don't follow back, and what changed since your last upload.
+A brutalist, single-page Instagram follow-back checker. Drop in your Instagram data
+export and see who does not follow you back, who you do not follow back, and what
+changed since last time.
 
-Everything runs in your browser. Your files are never uploaded anywhere, and no Instagram login is needed.
+Everything runs in your browser. No Instagram login, no account, no upload.
 
-**Live demo:** https://YOURUSERNAME.github.io/followback/ (replace with your own link after deploying)
+**Live demo:** https://jyotiprakash769.github.io/FOLLOW-BACK/followback/
+(enable GitHub Pages on this repo to serve it)
+
+## It really does run locally
+
+Most follower-checker sites ask for your Instagram password and send your data to a
+server. This one has no server to send anything to, and you do not have to take that
+on faith:
+
+- The page makes **zero network requests**. JSZip is bundled, not fetched from a CDN.
+- A strict Content-Security-Policy sets `connect-src 'none'`, so the browser itself
+  blocks any attempt to phone home, including one introduced by accident.
+- `script-src` is pinned to the sha256 of the page's own script. Nothing else runs.
+- Open DevTools, go to the Network tab and reload. Nothing but the page.
+
+`tools/verify.js` enforces all of that - 27 invariants - and CI runs it alongside
+eslint, a typecheck, the unit suite and Playwright browser tests, so a regression
+breaks the build.
 
 ## Features
 
-- Upload the Instagram ZIP as it downloads, or the loose JSON/HTML files
-- One big answer first: how many people don't follow you back
-- Lists: Not back, You skip, Mutual, Unfollowed you, New followers, Pending requests
-- Saved snapshots in your browser, with a history chart
-- Compare any two snapshots
-- Sort by follow date (newest or oldest)
-- Hide accounts you don't care about, and tick people off as you unfollow them
-- Banner showing changes since your last upload, with a refresh reminder after 14 days
-- Copy any list as CSV
-- Backup and restore your history as text
-- Light and dark themes
+- Reads the Instagram ZIP as it downloads, or loose JSON/HTML files
+- One big answer first: how many people do not follow you back
+- Lists: Not back, You skip, Mutual, Unfollowed you, New followers, Boomerang,
+  Pending out, Requests in, You unfollowed, Blocked, Restricted, Close friends
+- **Count check** that catches the wrong-date-range mistake before you trust the numbers
+- **Queue mode** - a keyboard-driven pass to work through a list: open, tick off, snooze, skip
+- **Insights**: growth, churn, median days-to-unfollow, and month-by-month retention
+- **Timeline** of every follow and unfollow, with dates, across all your snapshots
+- **Boomerang** list: accounts that followed you and then unfollowed
+- Per-account history: expand any row to see its full follow/unfollow timeline
+- A to-scale history chart of followers, following and not-following-back
+- Snapshot comparison, labelling and deletion
+- Sort by follow date; snooze until next upload, or always-skip for good
+- Bulk actions, CSV and JSON downloads, backup and restore
+- Reads follow dates from exports in 30+ languages
+- Light and dark themes; installable and fully offline
 
-## How to get your Instagram file
+## How to get your file
 
 1. Instagram: Settings, then Accounts Center
 2. Your information and permissions, then Download your information
 3. Choose **Followers and following** only, format **JSON**, date range **All time**
 4. Request the download, wait for the email, and download the ZIP
-5. Drop the ZIP onto the page (no need to unzip)
+5. Drop the ZIP onto the page. Do not unzip it.
 
-If the follower count shown after upload doesn't match your profile, re-check that the date range was set to All time.
+Date range **All time** is the one that matters. Anything else silently truncates the
+export and every number comes out wrong. After uploading, type the follower count from
+your profile into the count check box and the page will tell you whether the export is
+complete.
 
-## Usage
+Upload a fresh ZIP every week or two. Each upload adds a snapshot, which is what
+unlocks the timeline, the Unfollowed-you list and the chart.
 
-Open `index.html` in a browser, or host it as a static site (see below). It has no build step and no backend.
+## Where your history lives
 
-## Deploy with GitHub Pages
+In this browser's localStorage, and nowhere else. Clearing site data erases it, and it
+does not follow you to another browser or phone. Download the backup file if you want
+to keep it or move it.
 
-1. Push this repo to GitHub
-2. Settings, then Pages
-3. Source: deploy from branch `main`, folder `/ (root)`
-4. Your site appears at `https://<username>.github.io/<repo>/`
+History is stored in IndexedDB, gzipped, with localStorage as a fallback. Usernames
+are stored once and snapshots reference them by id, so a year of weekly uploads is a
+few hundred KB. The page shows how much space you are using.
 
-## Tech
+## Usage and deploy
 
-- Plain HTML, CSS and JavaScript in a single file, no build step, no backend
-- [JSZip](https://stuk.github.io/jszip/) (loaded from cdnjs) to read the Instagram ZIP
-- Browser localStorage for saved history
-- Inline SVG for the history chart
+Open `followback/index.html` in a browser - no server, no build step. To host it, any
+static host works; for GitHub Pages, Settings, then Pages, then deploy from the branch
+root, and the app is at `/followback/`.
 
-## Project structure
+## Development
 
+Source lives in `followback/src/` as ES modules; `followback/index.html` is generated.
+See [followback/README.md](followback/README.md).
+
+```bash
+cd followback
+npm install
+npm test          # 120 unit + integration tests
+npm run check     # build + lint + typecheck + test + verify
+npm run test:e2e  # Playwright smoke tests in a real browser
 ```
-followback/
-  index.html     the whole app
-  README.md
-  LICENSE
-  CHANGELOG.md
-  .gitignore
-```
 
-## Privacy
+## A note on unfollowing
 
-- Files are read and compared locally in your browser
-- History is stored in your browser's localStorage, per site address
-- Moving to a new address? Use **Make backup** on the old one and **Restore** on the new one
-- Never commit your Instagram export to this repository (the `.gitignore` blocks the usual file names)
+Queue mode opens profiles so you can unfollow by hand. It never automates Instagram -
+that breaks their terms and risks your account. Instagram also rate-limits bulk
+unfollowing, so pace yourself at roughly 100 to 200 a day.
 
 ## Limitations
 
-- Works only with Instagram's official data export, not usernames or logins
-- Threads files inside the ZIP are ignored on purpose
-- Counts depend on what Instagram puts in the export, so they can differ slightly from your live profile
-- Loads JSZip from cdnjs, so it needs an internet connection
-
-## Not affiliated with Instagram
-
-This is an independent personal project and is not affiliated with or endorsed by Instagram or Meta.
+- Instagram's export is a snapshot, not a feed. Unfollows are detected by comparing
+  uploads, so the gap between uploads is the resolution you get. The export's
+  "recently unfollowed" list fills some of that in on the first upload.
+- The export has no verified badge, private flag, follower count or bio, so none of
+  that can be shown.
+- HTML exports carry less reliable dates than JSON ones. Pick JSON.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT - see [followback/LICENSE](followback/LICENSE).

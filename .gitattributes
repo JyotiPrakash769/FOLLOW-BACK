@@ -1,0 +1,5 @@
+# The build hashes the inline script into the CSP, so line endings change
+# the output. Keep LF everywhere so a Windows checkout builds the same bytes.
+* text=auto eol=lf
+*.png binary
+*.ico binary

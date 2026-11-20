@@ -1,0 +1,15 @@
+{
+  "name": "FOLLOW/BACK - Instagram follow-back checker",
+  "short_name": "FOLLOW/BACK",
+  "description": "See who does not follow you back on Instagram. Reads your own data export locally. No login, no upload, no network requests.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f2ee",
+  "theme_color": "#ff3b00",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

@@ -8,7 +8,7 @@ Edit `src/`, never `index.html`.
 
 ```
 src/parse.js            username + timestamp extraction, locale-aware dates (pure)
-src/db.js               persistence adapters: IndexedDB + gzip, localStorage fallback
+src/db.js               storage adapters, and forgetSaved() which wipes old saved data
 src/store.js            snapshot schema v2, event log, insights, memoized lists
 src/gather.js           turns dropped files or a ZIP into a snapshot payload
 src/ui.js               DOM, rendering, queue mode, interaction
@@ -34,10 +34,15 @@ npm run serve     # http://localhost:8080
 
 ## Persistence
 
-History is stored in IndexedDB, gzipped, with localStorage kept as a fallback for
-browsers that block IndexedDB. Existing localStorage history is migrated into
-IndexedDB on first load. Usernames are interned once and snapshots reference them
-by integer id, so a year of weekly uploads is a few hundred KB before compression.
+There is none, on purpose. The app runs the store with its in-memory adapter, so a
+reload starts over at the upload screen. On load it calls `forgetSaved()`, which
+deletes the IndexedDB database and the localStorage keys earlier versions wrote. The
+IndexedDB and localStorage adapters stay in `src/db.js` (and tested) so persistence
+can be switched back on by passing `defaultAdapter()` to `createStore` in `ui.js`.
+Backup download and restore are the way to carry history between visits.
+
+The service worker is network first, with the cache only as an offline fallback, so a
+deploy is visible on the next load. It caches app files only, never user data.
 
 ## How the build stays honest
 

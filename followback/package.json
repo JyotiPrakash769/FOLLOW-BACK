@@ -1,6 +1,6 @@
 {
   "name": "followback",
-  "version": "2.0.0",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "description": "Brutalist Instagram follow-back checker. Runs entirely in the browser, makes zero network requests.",

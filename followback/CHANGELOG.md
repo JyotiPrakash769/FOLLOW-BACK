@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.0
+
+### Changed
+
+- **Nothing is saved between visits.** Data lives in the open tab only. Refreshing or
+  closing the page clears it, and the page asks for your ZIP again. Anything earlier
+  versions saved (IndexedDB and localStorage) is deleted on load. Use backup download
+  and restore to compare exports over time.
+- **New deploys show up straight away.** The service worker served the cached page
+  first and never updated it, so returning visitors kept seeing an old version. It is
+  now network first, falling back to the cache only when offline.
+
 ## 3.0.0
 
 Scale, analysis and the actual unfollow workflow, on top of a typechecked and

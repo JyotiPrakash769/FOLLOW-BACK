@@ -19,7 +19,7 @@
 <main>
 <h1>Follow/<br>Back</h1>
 <p class="sub">Instagram follow-back checker. Runs in your browser. Nothing is uploaded.</p>
-<p class="priv">No analytics, no CDN, no network requests. Open DevTools, Network tab, and reload: the page talks to nobody. JSZip is bundled, not fetched.</p>
+<p class="priv">No analytics, no CDN, no network requests, and nothing saved in your browser: refresh and it starts over. Open DevTools, Network tab, and reload: the page talks to nobody. JSZip is bundled, not fetched.</p>
 <div class="row" style="margin-bottom:18px">
 <button class="btn" id="th" type="button">Light / Dark</button>
 <button class="btn" id="mgr" type="button">Snapshots</button>
@@ -95,11 +95,11 @@
 
 <div class="box" style="margin-top:26px">
 <h2>Backup</h2>
-<p class="hint" style="margin-top:0">History lives in this browser only. Download the backup file and keep it somewhere safe.</p>
+<p class="hint" style="margin-top:0">Nothing is saved: refreshing or closing this page clears it, and you upload your ZIP again. To compare with a later export, download a backup now and restore it next time.</p>
 <div class="row">
 <button class="btn" id="bkdl" type="button">Download backup</button>
 <label class="btn" for="bkf" style="display:inline-block">Restore from file<input type="file" id="bkf" accept=".json,.txt" style="position:absolute;opacity:0;width:1px;height:1px"></label>
-<button class="btn" id="clr" type="button" style="background:var(--hot)">Erase history</button>
+<button class="btn" id="clr" type="button" style="background:var(--hot)">Clear</button>
 </div>
 <details style="margin-top:12px">
 <summary class="hint" style="cursor:pointer;font-weight:700">Paste a backup instead</summary>

@@ -57,18 +57,15 @@ export and every number comes out wrong. After uploading, type the follower coun
 your profile into the count check box and the page will tell you whether the export is
 complete.
 
-Upload a fresh ZIP every week or two. Each upload adds a snapshot, which is what
-unlocks the timeline, the Unfollowed-you list and the chart.
+## Nothing is saved
 
-## Where your history lives
+The page keeps your data in memory for as long as the tab is open, and nowhere else.
+Refresh or close it and everything is gone: the page starts over and asks for your ZIP
+again. Anything an older version saved in your browser is deleted on load.
 
-In this browser's localStorage, and nowhere else. Clearing site data erases it, and it
-does not follow you to another browser or phone. Download the backup file if you want
-to keep it or move it.
-
-History is stored in IndexedDB, gzipped, with localStorage as a fallback. Usernames
-are stored once and snapshots reference them by id, so a year of weekly uploads is a
-few hundred KB. The page shows how much space you are using.
+To compare two exports over time, upload one, download the backup file, and restore it
+next time before uploading the newer ZIP. Each upload in the same tab adds a snapshot,
+which is what unlocks the timeline, the Unfollowed-you list and the chart.
 
 ## Usage and deploy
 

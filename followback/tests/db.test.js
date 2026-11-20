@@ -1,7 +1,17 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
-import { indexedDbAdapter, storageAdapter, gzip, gunzip, estimateQuota, LS_KEY } from "../src/db.js";
+import {
+  indexedDbAdapter,
+  storageAdapter,
+  gzip,
+  gunzip,
+  estimateQuota,
+  forgetSaved,
+  LS_KEY,
+  LS_OLD_SNAPS,
+  LS_OLD_META
+} from "../src/db.js";
 
 function fakeLs() {
   const m = new Map();
@@ -88,5 +98,45 @@ describe("storageAdapter", () => {
     const r = storageAdapter(ls).write("x");
     expect(r.ok).toBe(false);
     expect(r.quota).toBe(true);
+  });
+});
+
+describe("forgetSaved", () => {
+  it("deletes the IndexedDB history and every localStorage key", async () => {
+    const ls = fakeLs();
+    // Seed the database the way an earlier version left it, then close the
+    // connection: the app holds none open, and an open one blocks deletion.
+    await new Promise((res, rej) => {
+      const r = indexedDB.open("followback", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("state");
+      r.onsuccess = () => {
+        const t = r.result.transaction("state", "readwrite");
+        t.objectStore("state").put("old history", "db_v2");
+        t.oncomplete = () => {
+          r.result.close();
+          res(undefined);
+        };
+      };
+      r.onerror = () => rej(r.error);
+    });
+    ls.setItem(LS_KEY, "x");
+    ls.setItem(LS_OLD_SNAPS, "x");
+    ls.setItem(LS_OLD_META, "x");
+
+    await forgetSaved(ls, globalThis.indexedDB);
+
+    expect(ls._map.size).toBe(0);
+    const names = (await indexedDB.databases()).map((d) => d.name);
+    expect(names).not.toContain("followback");
+  });
+
+  it("never throws when storage is blocked or missing", async () => {
+    const blocked = {
+      removeItem() {
+        throw new Error("SecurityError");
+      }
+    };
+    await expect(forgetSaved(/** @type {any} */ (blocked), null)).resolves.toBeUndefined();
+    await expect(forgetSaved(null, null)).resolves.toBeUndefined();
   });
 });

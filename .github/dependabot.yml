@@ -1,0 +1,17 @@
+# Weekly pull requests for outdated dev dependencies and Actions. CI runs on
+# each one, so a breaking update shows up as a red check rather than a surprise.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /followback
+    schedule:
+      interval: weekly
+    groups:
+      dev-tooling:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

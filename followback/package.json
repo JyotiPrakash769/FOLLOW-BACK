@@ -1,9 +1,9 @@
 {
   "name": "followback",
-  "version": "3.1.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
-  "description": "Brutalist Instagram follow-back checker. Runs entirely in the browser, makes zero network requests.",
+  "description": "Instagram follow-back checker. Runs entirely in the browser, makes zero network requests.",
   "license": "MIT",
   "scripts": {
     "build": "node build.js",
@@ -18,10 +18,10 @@
     "serve": "node tools/serve.js"
   },
   "devDependencies": {
-    "@eslint/js": "^9.15.0",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
-    "eslint": "^9.15.0",
+    "eslint": "^10.15.0",
     "fake-indexeddb": "^6.2.8",
     "fast-check": "^4.10.3",
     "globals": "^17.14.0",

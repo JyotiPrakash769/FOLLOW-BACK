@@ -556,3 +556,112 @@ describe("per-account history", () => {
     expect($("list").querySelector("li.hist").textContent).toMatch(/UNFOLLOWED YOU/);
   });
 });
+
+/** A ZIP whose files carry a given export date. */
+async function datedZip(name, when, followers, following) {
+  const z = new JSZip();
+  const d = z.folder("connections").folder("followers_and_following");
+  const rows = (us) =>
+    us.map((u) => ({
+      string_list_data: [{ href: "https://www.instagram.com/" + u, value: u, timestamp: 1700000000 }]
+    }));
+  d.file("followers_1.json", JSON.stringify(rows(followers)), { date: when });
+  d.file("following.json", JSON.stringify({ relationships_following: rows(following) }), { date: when });
+  return new win.File([await z.generateAsync({ type: "nodebuffer" })], name);
+}
+
+describe("comparing two exports at once", () => {
+  it("orders two ZIPs by export date and shows who unfollowed in between", async () => {
+    const older = await datedZip("old.zip", new Date(2026, 8, 1, 12), ["alice", "gone"], ["alice", "gone"]);
+    const newer = await datedZip("new.zip", new Date(2026, 10, 1, 12), ["alice", "fresh"], ["alice", "gone"]);
+    await upload([newer, older]); // deliberately the wrong way round
+    expect($("out").hidden).toBe(false);
+    expect($("msg").textContent).toMatch(/Loaded 2 exports/);
+    expect(activeTab()).toBe("Unfollowed you (1)");
+    expect(rowNames()).toEqual(["@gone"]);
+    const gained = Array.from($("tabs").children).find((b) => /^New followers/.test(b.textContent));
+    expect(gained.textContent).toBe("New followers (1)");
+  });
+});
+
+describe("leaving the page", () => {
+  it("asks before a refresh throws away loaded results", async () => {
+    const quiet = new win.Event("beforeunload", { cancelable: true });
+    win.dispatchEvent(quiet);
+    expect(quiet.defaultPrevented).toBe(false); // nothing loaded yet: no prompt
+    await upload(basicExport());
+    const ev = new win.Event("beforeunload", { cancelable: true });
+    win.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
+describe("password-protected backup", () => {
+  it("locks the file, then refuses no password and a wrong one, then restores", async () => {
+    await upload(basicExport());
+    let saved = "";
+    win.Blob = class extends globalThis.Blob {
+      constructor(parts, opts) {
+        super(parts, opts);
+        saved = String(parts[0]);
+      }
+    };
+    globalThis.Blob = win.Blob;
+    $("bkpw").value = "s3cret";
+    $("bkdl").dispatchEvent(new win.Event("click"));
+    for (let i = 0; i < 100 && !saved; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(saved).toMatch(/followback-encrypted/);
+    expect(saved).not.toContain("erin");
+    expect($("msg").textContent).toMatch(/locked with your password/);
+
+    $("clr").dispatchEvent(new win.Event("click"));
+    $("bk").value = saved;
+    const restoreWith = async (pw) => {
+      $("bkpw").value = pw;
+      $("msg").textContent = "";
+      $("rs").dispatchEvent(new win.Event("click"));
+      for (let i = 0; i < 100 && !$("msg").textContent; i++) await new Promise((r) => setTimeout(r, 20));
+      return $("msg").textContent;
+    };
+    expect(await restoreWith("")).toMatch(/password-protected/);
+    expect(await restoreWith("nope")).toMatch(/Wrong password/);
+    expect(await restoreWith("s3cret")).toMatch(/Backup restored/);
+    expect(rowNames()).toEqual(["@erin"]);
+  });
+
+  it("warns when a backup goes out unlocked", async () => {
+    await upload(basicExport());
+    $("bkpw").value = "";
+    $("bkdl").dispatchEvent(new win.Event("click"));
+    await tick();
+    expect($("msg").textContent).toMatch(/without a password/);
+  });
+});
+
+describe("languages", () => {
+  it("switches the whole interface to Hindi and Odia", async () => {
+    await upload(basicExport());
+    const pick = (l) => {
+      $("lang").value = l;
+      $("lang").dispatchEvent(new win.Event("change"));
+    };
+    pick("hi");
+    expect(doc.documentElement.lang).toBe("hi");
+    expect($("drop").textContent).toMatch(/Instagram ZIP यहाँ छोड़ें/);
+    expect(activeTab()).toMatch(/^वापस नहीं/);
+    expect($("bigl").textContent).toBe("आपको वापस फ़ॉलो नहीं करते");
+    pick("or");
+    expect($("drop").textContent).toMatch(/ଏଠାରେ ପକାନ୍ତୁ/);
+    pick("en");
+    expect(activeTab()).toMatch(/^Not back/);
+  });
+});
+
+describe("summary image", () => {
+  it("says so when the browser cannot draw", async () => {
+    await upload(basicExport());
+    $("img").dispatchEvent(new win.Event("click"));
+    // jsdom has no canvas, so this is the fallback path.
+    expect($("msg").textContent).toMatch(/cannot draw/);
+  });
+});

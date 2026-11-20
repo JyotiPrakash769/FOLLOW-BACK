@@ -1,6 +1,9 @@
 import { kind, extractDetailed } from "./parse.js";
 import { EXTRA_KINDS } from "./store.js";
 
+const DAY_MS = 86400000;
+const SANE_FROM = Date.UTC(2010, 0, 1); // Instagram launched in 2010
+
 export const ALL_KINDS = ["followers", "following", "pending"].concat(EXTRA_KINDS);
 
 /**
@@ -10,6 +13,14 @@ export const ALL_KINDS = ["followers", "following", "pending"].concat(EXTRA_KIND
  */
 export async function gather(files, Zip, onProgress) {
   const jobs = [];
+  // When the export was made: the newest file date inside the ZIP (Instagram
+  // stamps them when it builds the export), else the files' own dates.
+  let exportedAt = 0;
+  const seenDate = (d) => {
+    const ms = d instanceof Date ? d.getTime() : Number(d) || 0;
+    // ZIP dates default to 1980 when unset; ignore anything implausible.
+    if (ms > SANE_FROM && ms <= Date.now() + DAY_MS && ms > exportedAt) exportedAt = ms;
+  };
   for (const f of files) {
     if (/\.zip$/i.test(f.name)) {
       if (!Zip) throw new Error("ZIP support unavailable");
@@ -20,13 +31,20 @@ export async function gather(files, Zip, onProgress) {
         const entry = z.files[nm];
         if (entry.dir) continue;
         const k = kind(nm);
-        if (k) jobs.push({ k, name: nm, read: () => entry.async("string") });
+        if (k) {
+          seenDate(entry.date);
+          jobs.push({ k, name: nm, read: () => entry.async("string") });
+        }
       }
     } else {
       const k = kind(f.name);
-      if (k) jobs.push({ k, name: f.name, read: () => f.text() });
+      if (k) {
+        seenDate(f.lastModified);
+        jobs.push({ k, name: f.name, read: () => f.text() });
+      }
     }
   }
+  if (!exportedAt) for (const f of files) seenDate(f.lastModified);
 
   const payload = {};
   const index = {};
@@ -69,6 +87,7 @@ export async function gather(files, Zip, onProgress) {
     counts,
     files: used,
     considered: jobs.map((j) => j.name),
+    exportedAt: exportedAt || Date.now(),
     // An HTML export whose dates could not be read at all: usually a language
     // whose month names are not recognised. JSON always carries real timestamps.
     warnings: { htmlNoDates: htmlFiles > 0 && htmlWithDates === 0 }

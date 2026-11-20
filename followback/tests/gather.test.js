@@ -86,4 +86,22 @@ describe("gather", () => {
     );
     expect(names(r.payload.followers)).toEqual(["jack", "kate_01"]);
   });
+
+  it("dates the export from the files inside the ZIP", async () => {
+    const z = new JSZip();
+    const when = new Date(Date.UTC(2026, 9, 18, 12, 0, 0));
+    const d = z.folder("connections").folder("followers_and_following");
+    d.file("followers_1.json", fx("followers_1.json"), { date: when });
+    d.file("following.json", fx("following.json"), { date: when });
+    const buf = await z.generateAsync({ type: "nodebuffer" });
+    const r = await gather([new File([buf], "old.zip", { lastModified: Date.now() })], JSZip);
+    // ZIP stores local time to 2-second precision, so allow a day either way.
+    expect(Math.abs(r.exportedAt - when.getTime())).toBeLessThan(86400000);
+  });
+
+  it("falls back to the file date for loose files", async () => {
+    const at = Date.UTC(2025, 5, 1);
+    const r = await gather([new File([fx("followers_1.json")], "followers_1.json", { lastModified: at })], null);
+    expect(r.exportedAt).toBe(at);
+  });
 });

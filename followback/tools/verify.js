@@ -45,6 +45,17 @@ if (script) {
   const want = "sha256-" + createHash("sha256").update(script, "utf8").digest("base64");
   const got = (html.match(/script-src '([^']+)'/) || [])[1];
   check(want === got, "CSP script hash does not match the inline script (run npm run build)");
+
+  /* ---- Netlify _headers carries the same policy ---- */
+  const hdrPath = join(root, "_headers");
+  check(existsSync(hdrPath), "_headers is missing (run npm run build)");
+  if (existsSync(hdrPath)) {
+    const hdr = readFileSync(hdrPath, "utf8");
+    check(hdr.includes("script-src '" + want + "'"), "_headers CSP hash is stale (run npm run build)");
+    check(/frame-ancestors 'none'/.test(hdr), "_headers does not forbid framing");
+    check(/X-Content-Type-Options: nosniff/.test(hdr), "_headers is missing nosniff");
+    check(!/^\/sw\.js|^\/\*\s*\n\s*Content-Security-Policy/m.test(hdr), "_headers puts the page CSP on sw.js");
+  }
 }
 
 /* ---- worker is also network-free ---- */

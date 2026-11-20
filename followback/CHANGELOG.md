@@ -1,5 +1,45 @@
 # Changelog
 
+## 4.0.0
+
+### Added
+
+- **Compare two ZIPs at once.** Drop an older and a newer export together, in any
+  order. Each is dated from the files inside it, they are sorted, and the page opens
+  on Unfollowed you. This brings back the timeline, chart and insights without
+  saving anything.
+- **Password-protected backups.** Type a password before downloading and the backup
+  is encrypted (AES-256-GCM, key from PBKDF2-SHA256 at 310,000 rounds). Restoring
+  asks for it. A backup without a password now comes with a warning.
+- **Summary image.** A PNG card with the headline number, followers, following,
+  mutual and the change since the previous export. Counts only, no usernames.
+- **Share to the app.** The installed app is a share target on Android: share the
+  downloaded ZIP from Files and it opens straight away. The service worker holds
+  the file only until the page reads it, then it is deleted.
+- **Hindi and Odia.** A language picker translates the interface. The choice is kept
+  in the address (`?lang=hi`), so it survives a refresh without browser storage.
+- **Leave warning.** Once results are showing, the browser asks before a refresh or
+  close throws them away.
+- **Security headers on Netlify.** The build writes `_headers` with the page's CSP
+  as a real header (adding `frame-ancestors 'none'`), plus nosniff, a no-referrer
+  policy, X-Frame-Options and a Permissions-Policy. verify.js checks it.
+
+### Changed
+
+- **Softer design.** Warm paper tones by day and a dusk blue-grey by night replace
+  pure black, neon yellow and bright orange. Thinner borders, rounded corners and
+  tinted shadows; text never sits on a saturated colour, and every text colour
+  clears WCAG AA contrast in both themes.
+- Exports can be added in any order; snapshots stay sorted by date and the event
+  log is rebuilt from them, including after deleting one from the middle.
+- ESLint 10. Dependabot opens weekly update PRs.
+
+### Removed
+
+- The unused storage code: IndexedDB and localStorage adapters, gzip, the v1
+  localStorage migration, the storage meter and the storage-full prompts. Old v1 and
+  v2 backup files still restore.
+
 ## 3.1.0
 
 ### Changed

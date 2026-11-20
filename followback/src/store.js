@@ -1,22 +1,13 @@
 /**
- * Snapshot storage.
+ * Snapshot store, held in memory only. Nothing is written to the browser: the
+ * page starts over on every visit, and backups are the way to carry history.
  *
- * Usernames are interned once into `names`; snapshots hold integer ids. v1
- * repeated every username on every upload and exhausted the localStorage quota
- * after a few months of weekly uploads.
- *
- * Persistence is injected (see db.js). An adapter may be synchronous (a plain
- * Storage object, which is what the unit tests pass) or asynchronous
- * (IndexedDB). load/save/clear pass the adapter's result straight through, so
- * they return a promise only when the adapter does; callers can `await`
- * unconditionally.
+ * Usernames are interned once into `names`; snapshots hold integer ids, so a
+ * backup of many snapshots stays small. Snapshots are kept in date order, and
+ * the event log is replayed from them whenever that order changes, so ZIPs can
+ * be added in any order.
  */
 
-import { storageAdapter, LS_KEY, LS_OLD_SNAPS, LS_OLD_META } from "./db.js";
-
-export const KEY = LS_KEY;
-export const OLD_SNAPS = LS_OLD_SNAPS;
-export const OLD_META = LS_OLD_META;
 export const EXTRA_KINDS = ["unfollowed", "blocked", "restricted", "closefriends", "received", "recent"];
 export const DAY = 86400000;
 
@@ -31,23 +22,7 @@ function blank() {
   };
 }
 
-/** Run `fn` on a value that may or may not be a promise, without forcing one. */
-function thru(value, fn) {
-  return value && typeof value.then === "function" ? value.then(fn) : fn(value);
-}
-
-export function createStore(io) {
-  let adapter;
-  if (!io)
-    adapter = {
-      kind: "memory",
-      readAll: () => ({ current: null, v1snaps: null, v1meta: null }),
-      write: () => ({ ok: true }),
-      clear: () => ({ ok: true })
-    };
-  else if (typeof io.getItem === "function") adapter = storageAdapter(io);
-  else adapter = io;
-
+export function createStore() {
   let db = blank();
   let idx = new Map();
   let version = 0; // bumped on every mutation, to invalidate caches
@@ -84,29 +59,6 @@ export function createStore(io) {
     bump();
   }
 
-  function load() {
-    return thru(adapter.readAll(), (got) => {
-      let raw = null;
-      try {
-        raw = JSON.parse((got && got.current) || "null");
-      } catch (e) {
-        raw = null;
-      }
-      if (raw && raw.v === 2) {
-        adopt(raw);
-        return { migrated: false, from: got && got.from };
-      }
-      return { migrated: migrate(parseJson(got && got.v1snaps), parseJson(got && got.v1meta)) };
-    });
-  }
-  const parseJson = (t) => {
-    try {
-      return JSON.parse(t || "null");
-    } catch (e) {
-      return null;
-    }
-  };
-
   /** Convert a v1 payload (from storage, or from an old backup file). */
   function migrate(old, meta) {
     if (!Array.isArray(old) || !old.length) {
@@ -122,15 +74,12 @@ export function createStore(io) {
       if (!s || !Array.isArray(s.followers) || !Array.isArray(s.following)) continue;
       const stamps = Object.assign({}, s.dfo || {}, s.dfg || {});
       const at = (u) => stamps[String(u).toLowerCase()] || 0;
-      add(
-        {
-          t: s.t,
-          followers: s.followers.map((u) => ({ u, t: at(u) })),
-          following: s.following.map((u) => ({ u, t: at(u) })),
-          pending: (s.pending || []).map((u) => ({ u, t: 0 }))
-        },
-        true
-      );
+      add({
+        t: s.t,
+        followers: s.followers.map((u) => ({ u, t: at(u) })),
+        following: s.following.map((u) => ({ u, t: at(u) })),
+        pending: (s.pending || []).map((u) => ({ u, t: 0 }))
+      });
     }
     if (meta) {
       const m = pickMeta(meta);
@@ -139,7 +88,6 @@ export function createStore(io) {
       db.meta = Object.assign(db.meta, m);
     }
     bump();
-    save();
     return true;
   }
 
@@ -153,11 +101,7 @@ export function createStore(io) {
   }
 
   const serialise = () => JSON.stringify(db);
-
-  /** Persist. `{ok:false, quota:true}` means the caller should offer to prune. */
-  function save() {
-    return thru(adapter.write(serialise()), (r) => r || { ok: true });
-  }
+  const OK = () => ({ ok: true });
 
   const snaps = () => db.snaps;
   const latest = () => db.snaps[db.snaps.length - 1] || null;
@@ -176,9 +120,10 @@ export function createStore(io) {
 
   /**
    * Add a snapshot. `payload.followers/following/...` are [{u,t}] arrays.
-   * Two uploads on the same calendar day replace each other.
+   * It goes in date order, so an older ZIP added after a newer one lands in
+   * the right place. Two exports from the same calendar day replace each other.
    */
-  function add(payload, quiet) {
+  function add(payload) {
     const t = payload.t || Date.now();
     const conv = (arr) => {
       const out = [];
@@ -197,19 +142,24 @@ export function createStore(io) {
       }
     }
 
-    const prev = latest();
-    const sameDay = prev && new Date(prev.t).toDateString() === new Date(t).toDateString();
-    if (sameDay) {
-      db.events = db.events.filter((e) => e.s !== db.snaps.length - 1);
-      db.snaps[db.snaps.length - 1] = snap;
-    } else {
-      db.snaps.push(snap);
+    const day = new Date(t).toDateString();
+    const same = db.snaps.findIndex((x) => new Date(x.t).toDateString() === day);
+    if (same > -1) db.snaps[same] = snap;
+    else {
+      let at = db.snaps.length;
+      while (at > 0 && db.snaps[at - 1].t > t) at--;
+      db.snaps.splice(at, 0, snap);
     }
-    const base = sameDay ? db.snaps[db.snaps.length - 2] : prev;
-    if (base) logEvents(base, snap, db.snaps.length - 1);
+    replay();
     db.meta.snooze = []; // a snooze lasts until the next upload
     bump();
-    return quiet ? { ok: true } : save();
+    return OK();
+  }
+
+  /** Rebuild the event log from consecutive snapshots. */
+  function replay() {
+    db.events = [];
+    for (let i = 1; i < db.snaps.length; i++) logEvents(db.snaps[i - 1], db.snaps[i], i);
   }
 
   function logEvents(a, b, si) {
@@ -383,7 +333,7 @@ export function createStore(io) {
     if (at > -1) arr.splice(at, 1);
     else arr.push(i);
     bump();
-    return save();
+    return OK();
   }
   /** Set or clear a flag for several accounts at once. */
   function setFlag(listName, ids, on) {
@@ -398,36 +348,24 @@ export function createStore(io) {
       }
     }
     bump();
-    return save();
+    return OK();
   }
 
   function deleteSnapshot(i) {
     if (i < 0 || i >= db.snaps.length) return { ok: false };
     db.snaps.splice(i, 1);
-    db.events = db.events.filter((e) => e.s !== i).map((e) => (e.s > i ? Object.assign({}, e, { s: e.s - 1 }) : e));
+    replay();
     compact();
     bump();
-    return save();
+    return OK();
   }
   function label(i, text) {
     if (!db.snaps[i]) return { ok: false };
     if (text) db.snaps[i].label = String(text).slice(0, 40);
     else delete db.snaps[i].label;
     bump();
-    return save();
+    return OK();
   }
-  /** Drop the oldest snapshots. Only needed on the localStorage fallback. */
-  function pruneOldest(n) {
-    const keep = Math.max(1, db.snaps.length - n);
-    const dropped = db.snaps.length - keep;
-    if (dropped <= 0) return { ok: true, dropped: 0 };
-    db.snaps = db.snaps.slice(-keep);
-    db.events = db.events.filter((e) => e.s >= dropped).map((e) => Object.assign({}, e, { s: e.s - dropped }));
-    compact();
-    bump();
-    return thru(save(), (r) => Object.assign({ dropped }, r));
-  }
-
   /** Drop names nothing refers to any more, and renumber. */
   function compact() {
     const live = new Set();
@@ -475,26 +413,24 @@ export function createStore(io) {
       const arr = Array.isArray(j) ? j : j.snaps;
       if (!arr.every((s) => s && s.followers && s.following && s.t)) return { ok: false, reason: "bad v1 backup" };
       migrate(arr, j.meta || null);
-      return thru(save(), (r) => Object.assign({ ok: true, count: db.snaps.length }, r));
+      return { ok: true, count: db.snaps.length };
     }
     if (!j || j.v !== 2 || !Array.isArray(j.snaps) || !Array.isArray(j.names))
       return { ok: false, reason: "unrecognised backup" };
     adopt(j);
-    return thru(save(), (r) => Object.assign({ ok: true, count: db.snaps.length }, r));
+    return { ok: true, count: db.snaps.length };
   }
 
   function clear() {
     db = blank();
     idx = new Map();
     bump();
-    return thru(adapter.clear(), () => ({ ok: true }));
+    return OK();
   }
 
   const bytes = () => serialise().length;
 
   return {
-    load,
-    save,
     add,
     lists,
     insights,
@@ -514,15 +450,11 @@ export function createStore(io) {
     setFlag,
     deleteSnapshot,
     label,
-    pruneOldest,
     compact,
     exportJson,
     importJson,
     clear,
     bytes,
-    get adapterKind() {
-      return adapter.kind;
-    },
     get version() {
       return version;
     },

@@ -1,13 +1,12 @@
 # FOLLOW/BACK
 
-A brutalist, single-page Instagram follow-back checker. Drop in your Instagram data
+A single-page Instagram follow-back checker with a calm, soft-coloured design. Drop in your Instagram data
 export and see who does not follow you back, who you do not follow back, and what
 changed since last time.
 
 Everything runs in your browser. No Instagram login, no account, no upload.
 
-**Live demo:** https://jyotiprakash769.github.io/FOLLOW-BACK/followback/
-(enable GitHub Pages on this repo to serve it)
+**Live:** https://ornate-klepon-08fbc8.netlify.app/ (deploys from `main` automatically)
 
 ## It really does run locally
 
@@ -21,13 +20,18 @@ on faith:
 - `script-src` is pinned to the sha256 of the page's own script. Nothing else runs.
 - Open DevTools, go to the Network tab and reload. Nothing but the page.
 
-`tools/verify.js` enforces all of that - 27 invariants - and CI runs it alongside
+- Netlify also sends the same policy as a real HTTP header, plus `frame-ancestors 'none'`,
+  `nosniff` and a strict referrer policy.
+
+`tools/verify.js` enforces all of that - 34 invariants - and CI runs it alongside
 eslint, a typecheck, the unit suite and Playwright browser tests, so a regression
 breaks the build.
 
 ## Features
 
 - Reads the Instagram ZIP as it downloads, or loose JSON/HTML files
+- **Compare two ZIPs at once**: drop an older and a newer export together to see who
+  unfollowed you in between, with no saved history needed
 - One big answer first: how many people do not follow you back
 - Lists: Not back, You skip, Mutual, Unfollowed you, New followers, Boomerang,
   Pending out, Requests in, You unfollowed, Blocked, Restricted, Close friends
@@ -40,9 +44,14 @@ breaks the build.
 - A to-scale history chart of followers, following and not-following-back
 - Snapshot comparison, labelling and deletion
 - Sort by follow date; snooze until next upload, or always-skip for good
-- Bulk actions, CSV and JSON downloads, backup and restore
-- Reads follow dates from exports in 30+ languages
-- Light and dark themes; installable and fully offline
+- Bulk actions, CSV and JSON downloads
+- **Password-protected backups** (AES-256, key stretched with PBKDF2), restored the same way
+- **Summary image**: a PNG card of your numbers to share, with no usernames on it
+- **Share to the app** on Android: once installed, share the downloaded ZIP straight
+  from the Files app
+- **English, Hindi and Odia** interface; reads follow dates from exports in 30+ languages
+- Asks before a refresh throws away loaded results
+- Soft light and dark themes that are easy on the eyes; installable and fully offline
 
 ## How to get your file
 
@@ -81,7 +90,7 @@ See [followback/README.md](followback/README.md).
 ```bash
 cd followback
 npm install
-npm test          # 120 unit + integration tests
+npm test          # 131 unit + integration tests
 npm run check     # build + lint + typecheck + test + verify
 npm run test:e2e  # Playwright smoke tests in a real browser
 ```

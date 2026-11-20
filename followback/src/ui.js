@@ -1,11 +1,10 @@
-import { createStore } from "./store.js";
+import { createStore, DAY } from "./store.js";
 import { defaultAdapter, estimateQuota } from "./db.js";
 import { gather } from "./gather.js";
 
 /** @param {string} i @returns {any} the element, typed loosely for DOM property access */
 const $ = (i) => document.getElementById(i);
 const PAGE = 200;
-const DAY = 86400000;
 
 const TABS = [
   ["notback", "Not back"],

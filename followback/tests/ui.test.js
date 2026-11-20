@@ -65,6 +65,11 @@ function boot() {
   ]) {
     Object.defineProperty(globalThis, k, { configurable: true, writable: true, value: win[k] });
   }
+  // The app calls the global URL, which here is Node's, not jsdom's. Node's
+  // createObjectURL rejects jsdom Blobs, so stub it where the app looks.
+  for (const k of ["createObjectURL", "revokeObjectURL"]) {
+    Object.defineProperty(globalThis.URL, k, { configurable: true, writable: true, value: win.URL[k] });
+  }
   globalThis.JSZip = JSZip;
   Object.defineProperty(globalThis, "location", { configurable: true, writable: true, value: win.location });
   globalThis.confirm = win.confirm;

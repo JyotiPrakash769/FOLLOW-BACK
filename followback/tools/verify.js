@@ -1,6 +1,7 @@
 /** Post-build guards. These are the invariants the README promises. */
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { Script } from "node:vm";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -49,6 +50,23 @@ if (script) {
 /* ---- worker is also network-free ---- */
 const worker = read("worker.js");
 check(!/cdnjs|unpkg|jsdelivr|importScripts\s*\(\s*["']https?/.test(worker), "worker.js fetches code from the network");
+
+/* ---- both bundles compile ----
+ * The build concatenates modules into one scope, so two modules declaring the
+ * same top-level name pass every unit test and still break the page at parse
+ * time. Compiling (not running) the bundles catches that. */
+const compiles = (src, name) => {
+  try {
+    new Script(src, { filename: name });
+    return "";
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+};
+const scriptErr = compiles(script || "", "index.html <script>");
+check(!scriptErr, "index.html script does not compile: " + scriptErr);
+const workerErr = compiles(worker, "worker.js");
+check(!workerErr, "worker.js does not compile: " + workerErr);
 
 /* ---- service worker precache matches the files on disk ---- */
 const sw = read("sw.js");

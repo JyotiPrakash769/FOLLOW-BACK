@@ -2,8 +2,10 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+// fileURLToPath, not .pathname: on Windows .pathname is "/C:/..." and every request 404s.
+const root = fileURLToPath(new URL("..", import.meta.url));
 const TYPES = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -15,7 +17,8 @@ const TYPES = {
 
 createServer(async (req, res) => {
   const p = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
-  const file = join(root, p === "/" ? "index.html" : p);
+  // normalize("/") is "\" on Windows, so test for either separator.
+  const file = join(root, /^[/\\]?$/.test(p) ? "index.html" : p);
   try {
     const body = await readFile(file);
     res.writeHead(200, { "content-type": TYPES[extname(file)] || "application/octet-stream" });

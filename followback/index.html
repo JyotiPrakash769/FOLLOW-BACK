@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-8IeQTx81w5zRKCbG+61s/Ocx/VLboj/Q2jMbR5ViU/g='; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uKYZsASoDzhB/EZo7dTwa/tvsqa1JiS/iYGnLTUdgBs='; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>FOLLOW/BACK - Instagram follow-back checker</title>
 <meta name="description" content="See who does not follow you back on Instagram. Reads your own data export in the browser. No login, no upload, no network requests at all.">
 <meta name="color-scheme" content="light dark">
@@ -1946,7 +1946,6 @@ async function gather(files, Zip, onProgress) {
 /** @param {string} i @returns {any} the element, typed loosely for DOM property access */
 const $ = (i) => document.getElementById(i);
 const PAGE = 200;
-const DAY = 86400000;
 
 const TABS = [
   ["notback", "Not back"],

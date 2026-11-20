@@ -18,7 +18,7 @@ export const KEY = LS_KEY;
 export const OLD_SNAPS = LS_OLD_SNAPS;
 export const OLD_META = LS_OLD_META;
 export const EXTRA_KINDS = ["unfollowed", "blocked", "restricted", "closefriends", "received", "recent"];
-const DAY = 86400000;
+export const DAY = 86400000;
 
 function blank() {
   return {

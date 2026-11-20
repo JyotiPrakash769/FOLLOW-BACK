@@ -22,7 +22,7 @@ describe("extract never misbehaves on arbitrary input", () => {
           expect(r.t).toBeGreaterThanOrEqual(0);
         }
       }),
-      { numRuns: 500 }
+      cfg
     );
   });
 
@@ -32,7 +32,7 @@ describe("extract never misbehaves on arbitrary input", () => {
         const rows = extract(JSON.stringify(v));
         for (const r of rows) expect(isHandle(r.u)).toBe(true);
       }),
-      { numRuns: 500 }
+      cfg
     );
   });
 
@@ -45,7 +45,7 @@ describe("extract never misbehaves on arbitrary input", () => {
         const got = extract(json).map((r) => r.u.toLowerCase());
         expect(got.sort()).toEqual(unique.sort());
       }),
-      { numRuns: 200 }
+      { ...cfg, numRuns: 200 }
     );
   });
 });
@@ -59,7 +59,7 @@ describe("parseDate never throws", () => {
         expect(t).toBeGreaterThanOrEqual(0);
         expect(Number.isFinite(t)).toBe(true);
       }),
-      { numRuns: 500 }
+      cfg
     );
   });
 });

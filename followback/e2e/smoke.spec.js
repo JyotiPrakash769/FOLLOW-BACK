@@ -45,26 +45,18 @@ test("uploading a ZIP shows the headline and lists", async ({ page }) => {
   await expect(page.locator("#list")).toContainText("@erin");
 });
 
-test("history survives a reload via IndexedDB", async ({ page }) => {
+test("a reload starts over and saves nothing", async ({ page }) => {
   await page.goto("/");
   await page.setInputFiles("#f", { name: "export.zip", mimeType: "application/zip", buffer: await exportZip() });
   await expect(page.locator("#big")).toHaveText("1");
   await page.reload();
-  await expect(page.locator("#out")).toBeVisible();
-  await expect(page.locator("#big")).toHaveText("1");
-  // confirm it really used IndexedDB, not localStorage
-  const kind = await page.evaluate(async () => {
-    return new Promise((res) => {
-      const r = indexedDB.open("followback");
-      r.onsuccess = () => {
-        const has = r.result.objectStoreNames.contains("state");
-        r.result.close();
-        res(has);
-      };
-      r.onerror = () => res(false);
-    });
+  await expect(page.locator("#drop")).toBeVisible();
+  await expect(page.locator("#out")).toBeHidden();
+  const saved = await page.evaluate(async () => {
+    const dbs = indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name) : [];
+    return { localStorage: localStorage.length, indexedDB: dbs };
   });
-  expect(kind).toBe(true);
+  expect(saved).toEqual({ localStorage: 0, indexedDB: [] });
 });
 
 test("the inline script is CSP-pinned and runs", async ({ page }) => {

@@ -1,5 +1,5 @@
 import { createStore, DAY } from "./store.js";
-import { defaultAdapter, estimateQuota } from "./db.js";
+import { forgetSaved } from "./db.js";
 import { gather } from "./gather.js";
 
 /** @param {string} i @returns {any} the element, typed loosely for DOM property access */
@@ -36,7 +36,10 @@ const PACE =
   "itself - it only opens profiles so you can act, because automating the site would break their terms and risk your account.";
 
 export async function init() {
-  const S = createStore(defaultAdapter());
+  // Nothing is kept between visits: data lives in this tab only, so a refresh
+  // starts over at the upload screen. Also wipe anything older versions saved.
+  forgetSaved().catch(() => {});
+  const S = createStore(null);
   const migration = (await S.load()) || {};
   let tab = S.meta().tab || "notback";
   let ca = -1,
@@ -779,28 +782,13 @@ export async function init() {
   }
 
   async function renderUsage() {
-    const used = S.bytes();
-    const q = await estimateQuota(defaultAdapter());
-    const where = S.adapterKind === "indexedDB" ? "IndexedDB" : "this browser's localStorage";
-    const share = q.quota ? used / q.quota : 0;
     $("usage").textContent =
-      "History is in " +
-      where +
-      ": about " +
-      (used / 1024).toFixed(0) +
-      " KB uncompressed across " +
+      "Nothing is saved. " +
       S.snaps().length +
       " snapshot(s) and " +
       S.raw.names.length +
-      " accounts" +
-      (q.quota
-        ? ", against roughly " +
-          (q.quota / 1048576).toFixed(0) +
-          " MB available (" +
-          (share < 0.01 ? "under 1" : Math.round(share * 100)) +
-          "%)."
-        : ".");
-    $("umeter").style.width = Math.max(1, Math.min(100, Math.round(share * 100))) + "%";
+      " accounts are held in this tab only, and are gone when you refresh or close it.";
+    $("umeter").parentElement.hidden = true;
   }
 
   /* ---------- chart ---------- */
@@ -1135,11 +1123,11 @@ export async function init() {
     render(true);
   }
   $("clr").onclick = async () => {
-    if (!confirm("Erase all saved history in this browser? Download a backup first if you want to keep it.")) return;
+    if (!confirm("Clear everything from this tab? Download a backup first if you want to keep it.")) return;
     await S.clear();
     $("bk").value = "";
     $("out").hidden = true;
-    say("History erased.", "good");
+    say("Cleared. Upload a ZIP to start again.", "good");
   };
   $("claimb").onclick = async () => {
     const v = $("claim").value.trim();

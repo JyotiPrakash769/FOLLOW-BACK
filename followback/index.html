@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uKYZsASoDzhB/EZo7dTwa/tvsqa1JiS/iYGnLTUdgBs='; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-e/dM0E6g1UXOF7TQYX/r2AigFOBeZHPWeGsrvfME+gA='; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>FOLLOW/BACK - Instagram follow-back checker</title>
 <meta name="description" content="See who does not follow you back on Instagram. Reads your own data export in the browser. No login, no upload, no network requests at all.">
 <meta name="color-scheme" content="light dark">
@@ -637,7 +637,7 @@ li.r button.exp {
 <main>
 <h1>Follow/<br>Back</h1>
 <p class="sub">Instagram follow-back checker. Runs in your browser. Nothing is uploaded.</p>
-<p class="priv">No analytics, no CDN, no network requests. Open DevTools, Network tab, and reload: the page talks to nobody. JSZip is bundled, not fetched.</p>
+<p class="priv">No analytics, no CDN, no network requests, and nothing saved in your browser: refresh and it starts over. Open DevTools, Network tab, and reload: the page talks to nobody. JSZip is bundled, not fetched.</p>
 <div class="row" style="margin-bottom:18px">
 <button class="btn" id="th" type="button">Light / Dark</button>
 <button class="btn" id="mgr" type="button">Snapshots</button>
@@ -713,11 +713,11 @@ li.r button.exp {
 
 <div class="box" style="margin-top:26px">
 <h2>Backup</h2>
-<p class="hint" style="margin-top:0">History lives in this browser only. Download the backup file and keep it somewhere safe.</p>
+<p class="hint" style="margin-top:0">Nothing is saved: refreshing or closing this page clears it, and you upload your ZIP again. To compare with a later export, download a backup now and restore it next time.</p>
 <div class="row">
 <button class="btn" id="bkdl" type="button">Download backup</button>
 <label class="btn" for="bkf" style="display:inline-block">Restore from file<input type="file" id="bkf" accept=".json,.txt" style="position:absolute;opacity:0;width:1px;height:1px"></label>
-<button class="btn" id="clr" type="button" style="background:var(--hot)">Erase history</button>
+<button class="btn" id="clr" type="button" style="background:var(--hot)">Clear</button>
 </div>
 <details style="margin-top:12px">
 <summary class="hint" style="cursor:pointer;font-weight:700">Paste a backup instead</summary>
@@ -939,6 +939,37 @@ async function estimateQuota(adapter) {
   if (adapter && adapter.kind === "indexedDB" && !adapter.degraded)
     return { quota: 200 * 1024 * 1024, usage: 0, source: "assumed" };
   return { quota: 5 * 1024 * 1024, usage: 0, source: "localStorage" };
+}
+
+/**
+ * Delete everything an earlier version saved in this browser: the IndexedDB
+ * database and every localStorage key. The app no longer keeps data between
+ * visits, so nothing should linger from before. Never throws, never hangs.
+ * @param {Storage | null} [storage] defaults to the page's localStorage
+ * @param {IDBFactory | null} [idb] defaults to the page's indexedDB
+ * @returns {Promise<void>}
+ */
+function forgetSaved(storage, idb) {
+  const ls = storage !== undefined ? storage : typeof localStorage !== "undefined" ? localStorage : null;
+  const db = idb !== undefined ? idb : typeof indexedDB !== "undefined" ? indexedDB : null;
+  if (ls) {
+    for (const k of [LS_KEY, LS_OLD_SNAPS, LS_OLD_META]) {
+      try {
+        ls.removeItem(k);
+      } catch (e) {
+        /* storage blocked: nothing was saved there either */
+      }
+    }
+  }
+  if (!db) return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const req = db.deleteDatabase(DB_NAME);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    } catch (e) {
+      resolve();
+    }
+  });
 }
 
 /** Pick the best adapter this browser offers. */
@@ -1977,7 +2008,10 @@ const PACE =
   "itself - it only opens profiles so you can act, because automating the site would break their terms and risk your account.";
 
 async function init() {
-  const S = createStore(defaultAdapter());
+  // Nothing is kept between visits: data lives in this tab only, so a refresh
+  // starts over at the upload screen. Also wipe anything older versions saved.
+  forgetSaved().catch(() => {});
+  const S = createStore(null);
   const migration = (await S.load()) || {};
   let tab = S.meta().tab || "notback";
   let ca = -1,
@@ -2720,28 +2754,13 @@ async function init() {
   }
 
   async function renderUsage() {
-    const used = S.bytes();
-    const q = await estimateQuota(defaultAdapter());
-    const where = S.adapterKind === "indexedDB" ? "IndexedDB" : "this browser's localStorage";
-    const share = q.quota ? used / q.quota : 0;
     $("usage").textContent =
-      "History is in " +
-      where +
-      ": about " +
-      (used / 1024).toFixed(0) +
-      " KB uncompressed across " +
+      "Nothing is saved. " +
       S.snaps().length +
       " snapshot(s) and " +
       S.raw.names.length +
-      " accounts" +
-      (q.quota
-        ? ", against roughly " +
-          (q.quota / 1048576).toFixed(0) +
-          " MB available (" +
-          (share < 0.01 ? "under 1" : Math.round(share * 100)) +
-          "%)."
-        : ".");
-    $("umeter").style.width = Math.max(1, Math.min(100, Math.round(share * 100))) + "%";
+      " accounts are held in this tab only, and are gone when you refresh or close it.";
+    $("umeter").parentElement.hidden = true;
   }
 
   /* ---------- chart ---------- */
@@ -3076,11 +3095,11 @@ async function init() {
     render(true);
   }
   $("clr").onclick = async () => {
-    if (!confirm("Erase all saved history in this browser? Download a backup first if you want to keep it.")) return;
+    if (!confirm("Clear everything from this tab? Download a backup first if you want to keep it.")) return;
     await S.clear();
     $("bk").value = "";
     $("out").hidden = true;
-    say("History erased.", "good");
+    say("Cleared. Upload a ZIP to start again.", "good");
   };
   $("claimb").onclick = async () => {
     const v = $("claim").value.trim();

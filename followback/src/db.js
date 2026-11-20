@@ -195,6 +195,37 @@ export async function estimateQuota(adapter) {
   return { quota: 5 * 1024 * 1024, usage: 0, source: "localStorage" };
 }
 
+/**
+ * Delete everything an earlier version saved in this browser: the IndexedDB
+ * database and every localStorage key. The app no longer keeps data between
+ * visits, so nothing should linger from before. Never throws, never hangs.
+ * @param {Storage | null} [storage] defaults to the page's localStorage
+ * @param {IDBFactory | null} [idb] defaults to the page's indexedDB
+ * @returns {Promise<void>}
+ */
+export function forgetSaved(storage, idb) {
+  const ls = storage !== undefined ? storage : typeof localStorage !== "undefined" ? localStorage : null;
+  const db = idb !== undefined ? idb : typeof indexedDB !== "undefined" ? indexedDB : null;
+  if (ls) {
+    for (const k of [LS_KEY, LS_OLD_SNAPS, LS_OLD_META]) {
+      try {
+        ls.removeItem(k);
+      } catch (e) {
+        /* storage blocked: nothing was saved there either */
+      }
+    }
+  }
+  if (!db) return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const req = db.deleteDatabase(DB_NAME);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    } catch (e) {
+      resolve();
+    }
+  });
+}
+
 /** Pick the best adapter this browser offers. */
 export function defaultAdapter() {
   const ls = typeof localStorage !== "undefined" ? localStorage : null;

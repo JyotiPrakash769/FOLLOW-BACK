@@ -419,53 +419,42 @@ describe("snapshot manager", () => {
 
   it("reports storage use", async () => {
     await upload(basicExport());
-    expect(text("usage")).toMatch(/History is in/);
+    expect(text("usage")).toMatch(/Nothing is saved/);
     expect(text("usage")).toMatch(/1 snapshot\(s\) and 4 accounts/);
   });
 });
 
-describe("persistence", () => {
-  it("restores the session on reload, including the open tab and theme", async () => {
+describe("nothing is kept between visits", () => {
+  it("starts over on reload and asks for the ZIP again", async () => {
     await upload(basicExport());
-    const fans = Array.from($("tabs").children).find((b) => /^You skip/.test(b.textContent));
-    fans.dispatchEvent(new win.Event("click"));
-    $("th").dispatchEvent(new win.Event("click"));
-    const saved = win.localStorage.getItem("fb_db_v2");
+    expect($("out").hidden).toBe(false);
 
-    const prev = win.localStorage;
     boot();
-    Object.defineProperty(win, "localStorage", { configurable: true, value: prev });
-    globalThis.localStorage = prev;
-    win.localStorage.setItem("fb_db_v2", saved);
     const { init } = await import("../src/ui.js?t=" + Math.random());
     await init();
 
-    expect($("out").hidden).toBe(false);
-    expect(activeTab()).toMatch(/^You skip/);
-    expect(doc.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect($("out").hidden).toBe(true);
+    expect($("drop")).not.toBeNull();
   });
 
-  it("migrates a v1 history and tells the user", async () => {
+  it("writes nothing to localStorage", async () => {
+    await upload(basicExport());
+    $("th").dispatchEvent(new win.Event("click"));
+    await tick();
+    for (const k of ["fb_db_v2", "fb_snaps_v1", "fb_meta_v1"]) expect(win.localStorage.getItem(k)).toBeNull();
+  });
+
+  it("ignores and erases history saved by earlier versions", async () => {
     boot();
-    win.localStorage.setItem(
-      "fb_snaps_v1",
-      JSON.stringify([
-        {
-          t: Date.now() - 86400000,
-          followers: ["alice", "bob"],
-          following: ["alice", "erin"],
-          dfo: { alice: 1699000000 },
-          dfg: {}
-        }
-      ])
-    );
+    win.localStorage.setItem("fb_db_v2", JSON.stringify({ v: 2, names: ["alice"], snaps: [] }));
+    win.localStorage.setItem("fb_snaps_v1", JSON.stringify([{ t: Date.now(), followers: ["alice"], following: [] }]));
     win.localStorage.setItem("fb_meta_v1", JSON.stringify({ ign: [], done: [], th: "", so: "az" }));
     const { init } = await import("../src/ui.js?t=" + Math.random());
     await init();
-    expect($("out").hidden).toBe(false);
-    expect(text("sa")).toBe("2");
-    expect(rowNames()).toEqual(["@erin"]);
-    expect($("msg").textContent).toMatch(/Upgraded your saved history/);
+    await tick();
+
+    expect($("out").hidden).toBe(true);
+    for (const k of ["fb_db_v2", "fb_snaps_v1", "fb_meta_v1"]) expect(win.localStorage.getItem(k)).toBeNull();
   });
 });
 

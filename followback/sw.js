@@ -1,6 +1,9 @@
-/* FOLLOW/BACK service worker: precache the shell so the app works offline.
-   It never caches anything from another origin, because the app never talks to one. */
-var CACHE = "followback-v2";
+/* FOLLOW/BACK service worker: keeps the app shell cached so the page opens offline.
+   Network first, cache as the offline fallback, so every deploy shows up on the next
+   load instead of being masked by an old cached copy. It never caches anything from
+   another origin, because the app never talks to one. It stores app files only, never
+   your Instagram data. */
+var CACHE = "followback-v4";
 var SHELL = ["./", "./index.html", "./worker.js", "./icon.svg", "./manifest.webmanifest"];
 
 self.addEventListener("install", function (e) {
@@ -19,15 +22,16 @@ self.addEventListener("fetch", function (e) {
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(function (hit) {
-      if (hit) return hit;
-      return fetch(req).then(function (res) {
-        if (res && res.ok && res.type === "basic") {
-          var copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(req, copy); });
-        }
-        return res;
-      }).catch(function () { return caches.match("./index.html"); });
+    fetch(req).then(function (res) {
+      if (res && res.ok && res.type === "basic") {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(req, copy); });
+      }
+      return res;
+    }).catch(function () {
+      return caches.match(req, { ignoreSearch: true }).then(function (hit) {
+        return hit || caches.match("./index.html");
+      });
     })
   );
 });

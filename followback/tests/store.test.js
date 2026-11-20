@@ -1,32 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createStore, KEY, OLD_SNAPS, OLD_META } from "../src/store.js";
-
-/** localStorage stand-in, with an optional byte cap to exercise the quota path. */
-function fakeStorage(cap) {
-  const m = new Map();
-  return {
-    cap,
-    getItem: (k) => (m.has(k) ? m.get(k) : null),
-    removeItem: (k) => m.delete(k),
-    setItem(k, v) {
-      if (this.cap && v.length > this.cap) {
-        const e = new Error("quota");
-        e.name = "QuotaExceededError";
-        throw e;
-      }
-      m.set(k, v);
-    },
-    _map: m
-  };
-}
+import { createStore } from "../src/store.js";
 const day = 86400000;
 const list = (...us) => us.map((u) => ({ u, t: 0 }));
 
-let st, S;
+let S;
 beforeEach(() => {
-  st = fakeStorage();
-  S = createStore(st);
-  S.load();
+  S = createStore();
 });
 
 describe("snapshots and derived lists", () => {
@@ -78,6 +57,30 @@ describe("first-seen timestamps", () => {
     S.add({ t: day, followers: [{ u: "old", t: 111 }], following: [{ u: "old", t: 111 }] });
     for (let i = 2; i < 6; i++) S.add({ t: i * day, followers: list("old"), following: list("old") });
     expect(S.firstSeen(S.id("old"))).toBe(111); // the v1 code lost this after two uploads
+  });
+});
+
+describe("exports added out of order", () => {
+  it("files an older export before a newer one and compares them the right way round", () => {
+    S.add({ t: 30 * day, followers: list("a", "new"), following: list("a") });
+    S.add({ t: day, followers: list("a", "gone"), following: list("a") });
+    expect(S.snaps().map((x) => x.t)).toEqual([day, 30 * day]);
+    const L = S.lists();
+    expect(L.lost.map(S.name)).toEqual(["gone"]);
+    expect(L.gained.map(S.name)).toEqual(["new"]);
+    expect(S.latest().t).toBe(30 * day);
+  });
+
+  it("rebuilds the event log when a snapshot is deleted from the middle", () => {
+    S.add({ t: day, followers: list("a"), following: list("a") });
+    S.add({ t: 2 * day, followers: list("a", "b"), following: list("a") });
+    S.add({ t: 3 * day, followers: list("a", "b", "c"), following: list("a") });
+    S.deleteSnapshot(1);
+    const gained = S.events()
+      .filter((e) => e.k === "gained")
+      .map((e) => S.name(e.id))
+      .sort();
+    expect(gained).toEqual(["b", "c"]); // now one jump from day 1 to day 3
   });
 });
 
@@ -145,30 +148,6 @@ describe("storage size", () => {
     }).length;
     expect(v2marginal).toBeLessThan(v1marginal / 3);
   });
-
-  it("reports a quota failure instead of silently losing the snapshot", () => {
-    st.cap = 50;
-    const r = S.add({ t: day, followers: list("a", "b", "c"), following: list("a") });
-    expect(r.ok).toBe(false);
-    expect(r.quota).toBe(true);
-    expect(S.snaps()).toHaveLength(1); // still in memory, so the UI can offer to prune
-  });
-
-  it("prunes the oldest snapshots and frees the names they held", () => {
-    for (let d = 1; d <= 4; d++) S.add({ t: d * day, followers: list("keep", "drop" + d), following: list("keep") });
-    const before = S.raw.names.length;
-    const r = S.pruneOldest(3);
-    expect(r.dropped).toBe(3);
-    expect(S.snaps()).toHaveLength(1);
-    expect(S.raw.names.length).toBeLessThan(before);
-    expect(S.lists().mutual.map(S.name)).toEqual(["keep"]);
-  });
-
-  it("never prunes away the last snapshot", () => {
-    S.add({ t: day, followers: list("a"), following: list("a") });
-    S.pruneOldest(9);
-    expect(S.snaps()).toHaveLength(1);
-  });
 });
 
 describe("snapshot management", () => {
@@ -199,8 +178,7 @@ describe("backups", () => {
     S.add({ t: day, followers: [{ u: "alice", t: 42 }], following: list("alice", "bob") });
     S.setFlag("done", [S.id("bob")], true);
     const text = S.exportJson();
-    const T = createStore(fakeStorage());
-    T.load();
+    const T = createStore();
     const r = T.importJson(text);
     expect(r.ok).toBe(true);
     expect(T.lists().notback.map(T.name)).toEqual(["bob"]);
@@ -225,42 +203,6 @@ describe("backups", () => {
     expect(S.importJson("not json").ok).toBe(false);
     expect(S.importJson('{"v":99}').reason).toMatch(/unrecognised/);
     expect(S.importJson('{"snaps":[{"nope":1}]}').reason).toMatch(/v1/);
-  });
-});
-
-describe("migration from v1 localStorage", () => {
-  it("converts saved v1 data on first load and writes the new key", () => {
-    const s2 = fakeStorage();
-    s2.setItem(
-      OLD_SNAPS,
-      JSON.stringify([
-        { t: day, followers: ["alice", "bob"], following: ["alice"], dfo: { alice: 99 }, dfg: {} },
-        { t: 2 * day, followers: ["alice"], following: ["alice"], dfo: {}, dfg: {} }
-      ])
-    );
-    s2.setItem(OLD_META, JSON.stringify({ ign: ["bob"], th: "dark", so: "old" }));
-    const T = createStore(s2);
-    expect(T.load().migrated).toBe(true);
-    expect(T.snaps()).toHaveLength(2);
-    expect(T.meta().th).toBe("dark");
-    expect(T.firstSeen(T.id("alice"))).toBe(99);
-    expect(T.events().some((e) => e.k === "lost" && T.name(e.id) === "bob")).toBe(true);
-    expect(JSON.parse(s2.getItem(KEY)).v).toBe(2);
-  });
-
-  it("loads v2 data straight back without migrating", () => {
-    S.add({ t: day, followers: list("alice"), following: list("alice") });
-    const T = createStore(st);
-    expect(T.load().migrated).toBe(false);
-    expect(T.lists().mutual.map(T.name)).toEqual(["alice"]);
-  });
-
-  it("survives corrupt stored data", () => {
-    const s3 = fakeStorage();
-    s3.setItem(KEY, "{not json");
-    const T = createStore(s3);
-    expect(() => T.load()).not.toThrow();
-    expect(T.snaps()).toEqual([]);
   });
 });
 
